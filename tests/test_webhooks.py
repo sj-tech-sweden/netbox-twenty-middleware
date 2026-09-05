@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import json
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -74,7 +74,7 @@ class TestTwentyWebhook:
     @pytest.mark.anyio
     async def test_accepts_valid_bearer(self, mock_settings):
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
-            mock_client = AsyncMock()
+            mock_client = MagicMock()
             mock_client.incr.return_value = 1
             mock_vk.return_value = mock_client
 
@@ -101,7 +101,7 @@ class TestTwentyWebhook:
     @pytest.mark.anyio
     async def test_accepts_query_token(self, mock_settings):
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
-            mock_client = AsyncMock()
+            mock_client = MagicMock()
             mock_client.incr.return_value = 1
             mock_vk.return_value = mock_client
 
@@ -116,7 +116,7 @@ class TestTwentyWebhook:
     @pytest.mark.anyio
     async def test_bearer_takes_precedence_over_query(self, mock_settings):
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
-            mock_client = AsyncMock()
+            mock_client = MagicMock()
             mock_client.incr.return_value = 1
             mock_vk.return_value = mock_client
 
@@ -143,7 +143,7 @@ class TestTwentyWebhook:
     @pytest.mark.anyio
     async def test_returns_event_in_response(self, mock_settings):
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
-            mock_client = AsyncMock()
+            mock_client = MagicMock()
             mock_client.incr.return_value = 1
             mock_vk.return_value = mock_client
 
@@ -178,7 +178,7 @@ class TestNetboxWebhook:
         sig = _netbox_signature(body, "test-netbox-secret")
 
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
-            mock_client = AsyncMock()
+            mock_client = MagicMock()
             mock_client.incr.return_value = 1
             mock_vk.return_value = mock_client
 
@@ -209,7 +209,7 @@ class TestNetboxWebhook:
         sig = _netbox_signature(body, "test-netbox-secret")
 
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
-            mock_client = AsyncMock()
+            mock_client = MagicMock()
             mock_client.incr.return_value = 1
             mock_vk.return_value = mock_client
 
@@ -246,7 +246,7 @@ class TestHealthEndpoints:
             patch("app.api.v1.router.get_valkey_client") as mock_vk,
             patch("app.api.v1.router.NetBoxClient") as mock_nb_cls,
         ):
-            mock_client = AsyncMock()
+            mock_client = MagicMock()
             mock_client.ping = AsyncMock()
             mock_vk.return_value = mock_client
 
