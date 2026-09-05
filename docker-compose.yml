@@ -1,0 +1,48 @@
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    command: valkey-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  middleware_api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+    depends_on:
+      valkey:
+        condition: service_healthy
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 2
+
+  middleware_worker:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+    depends_on:
+      valkey:
+        condition: service_healthy
+    command: >
+      python -m app.core.worker
+    restart: unless-stopped
+
+volumes:
+  valkey_data:

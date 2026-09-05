@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    "group:allNonMajor"
+  ],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+    {
+      "matchPackagePrefixes": ["docker/"],
+      "groupName": "Docker actions"
+    },
+    {
+      "matchPackagePrefixes": ["python"],
+      "groupName": "Python dependencies"
+    }
+  ],
+  "docker-compose": {
+    "fileMatch": ["docker-compose\\.yml$"]
+  },
+  "postUpdateOptions": ["pipCompileDocker"]
+}
