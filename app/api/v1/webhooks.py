@@ -11,7 +11,7 @@ from app.core.valkey import enqueue_event, get_valkey_client
 
 logger = logging.getLogger("netbox_twenty.webhooks")
 
-router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
 
 _settings: Settings | None = None
 

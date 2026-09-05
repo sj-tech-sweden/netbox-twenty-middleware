@@ -8,7 +8,7 @@ class TestSlugify:
         assert slugify("Hello World") == "hello-world"
 
     def test_special_chars(self):
-        assert slugify("Acme & Co!") == "acme--co"
+        assert slugify("Acme & Co!") == "acme-co"
 
     def test_collapses_dashes(self):
         assert slugify("a---b") == "a-b"

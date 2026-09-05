@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Response
 
 from app.config import Settings
@@ -47,9 +49,10 @@ async def readyz() -> Response:
 
     all_ok = all(v == "ok" for v in checks.values())
     status_code = 200 if all_ok else 503
+    body = {"status": "ok" if all_ok else "degraded", "checks": checks}
 
     return Response(
-        content=f'{{"status":"{"ok" if all_ok else "degraded"}","checks":{checks}}}',
+        content=json.dumps(body),
         media_type="application/json",
         status_code=status_code,
     )

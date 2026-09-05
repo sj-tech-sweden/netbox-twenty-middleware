@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -26,11 +26,48 @@ def settings():
 @pytest.fixture
 def engine(settings):
     with (
-        patch("app.services.sync_engine.NetBoxClient") as mock_nb,
-        patch("app.services.sync_engine.TwentyClient") as mock_twenty,
+        patch("app.services.sync_engine.NetBoxClient") as mock_nb_cls,
+        patch("app.services.sync_engine.TwentyClient") as mock_twenty_cls,
     ):
-        nb = mock_nb.return_value
-        twenty = mock_twenty.return_value
+        nb = mock_nb_cls.return_value
+        twenty = mock_twenty_cls.return_value
+
+        # NetBox client async methods
+        nb.get_tenant = AsyncMock(return_value=None)
+        nb.get_tenants = AsyncMock(return_value=[])
+        nb.create_tenant = AsyncMock(return_value={"id": 1})
+        nb.update_tenant = AsyncMock()
+        nb.delete_tenant = AsyncMock()
+        nb.get_custom_fields = AsyncMock(return_value=[])
+        nb.create_custom_field = AsyncMock()
+        nb.get_event_rules = AsyncMock(return_value=[])
+        nb.create_event_rule = AsyncMock()
+        nb.update_event_rule = AsyncMock()
+        nb.is_healthy = AsyncMock(return_value=True)
+        nb.close = AsyncMock()
+
+        # Twenty client async methods
+        twenty.get_company = AsyncMock(return_value=None)
+        twenty.get_companies = AsyncMock(return_value=[])
+        twenty.create_company = AsyncMock(return_value={"id": "new"})
+        twenty.update_company = AsyncMock()
+        twenty.get_company_custom_fields = AsyncMock(return_value=[])
+        twenty.create_field = AsyncMock()
+        twenty.get_object_metadata = AsyncMock(return_value=None)
+        twenty.create_object = AsyncMock()
+        twenty.create_object_field = AsyncMock()
+        twenty.get_webhooks = AsyncMock(return_value=[])
+        twenty.create_webhook = AsyncMock()
+        twenty.update_webhook = AsyncMock()
+        twenty.get_netbox_resources = AsyncMock(return_value=[])
+        twenty.create_netbox_resource = AsyncMock(return_value={"id": "res-new"})
+        twenty.update_netbox_resource = AsyncMock()
+        twenty._delete = AsyncMock()
+        twenty._get = AsyncMock()
+        twenty._post = AsyncMock()
+        twenty._patch = AsyncMock()
+        twenty.close = AsyncMock()
+
         eng = SyncEngine(settings)
         eng._netbox = nb
         eng._twenty = twenty
