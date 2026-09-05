@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -61,7 +60,11 @@ class SyncEngine:
             try:
                 tenant = await self._netbox.get_tenant(int(existing_tenant_id))
             except Exception:
-                logger.warning("Stale netbox_tenant_id %s on company %s", existing_tenant_id, company_id)
+                logger.warning(
+                    "Stale netbox_tenant_id %s on company %s",
+                    existing_tenant_id,
+                    company_id,
+                )
                 tenant = None
 
             if tenant:
@@ -76,13 +79,25 @@ class SyncEngine:
                 if cf.get("twenty_company_id") != company_id:
                     update_payload.setdefault("custom_fields", {})["twenty_company_id"] = company_id
                 if cf.get("twenty_company_url") != company_url:
-                    update_payload.setdefault("custom_fields", {})["twenty_company_url"] = company_url
+                    cf_key = "custom_fields"
+                    update_payload.setdefault(cf_key, {})["twenty_company_url"] = company_url
 
                 if update_payload:
-                    await self._netbox.update_tenant(int(existing_tenant_id), update_payload)
-                    logger.info("Updated NetBox tenant %s from company %s", existing_tenant_id, company_id)
+                    await self._netbox.update_tenant(
+                        int(existing_tenant_id),
+                        update_payload,
+                    )
+                    logger.info(
+                        "Updated NetBox tenant %s from company %s",
+                        existing_tenant_id,
+                        company_id,
+                    )
                 else:
-                    logger.debug("Tenant %s already in sync for company %s", existing_tenant_id, company_id)
+                    logger.debug(
+                        "Tenant %s already in sync for company %s",
+                        existing_tenant_id,
+                        company_id,
+                    )
                 return
 
         # No existing tenant – create one
@@ -99,13 +114,16 @@ class SyncEngine:
         netbox_url = self._netbox_tenant_url(new_tenant_id)
 
         # Write back the NetBox tenant ID and deeplink to Twenty
-        await self._twenty.update_company(company_id, {
-            "customFields": {
-                "netbox_tenantId": new_tenant_id,
-                "netbox_tenantSlug": slug,
-                "netboxTenantUrl": netbox_url,
+        await self._twenty.update_company(
+            company_id,
+            {
+                "customFields": {
+                    "netbox_tenantId": new_tenant_id,
+                    "netbox_tenantSlug": slug,
+                    "netboxTenantUrl": netbox_url,
+                },
             },
-        })
+        )
         logger.info("Created NetBox tenant %s for company %s", new_tenant_id, company_id)
 
     async def _delete_tenant_for_company(self, company: dict[str, Any]) -> None:
@@ -141,13 +159,16 @@ class SyncEngine:
 
         if action == "deleted":
             if company_id:
-                await self._twenty.update_company(company_id, {
-                    "customFields": {
-                        "netbox_tenantId": None,
-                        "netbox_tenantSlug": None,
-                        "netboxTenantUrl": None,
+                await self._twenty.update_company(
+                    company_id,
+                    {
+                        "customFields": {
+                            "netbox_tenantId": None,
+                            "netbox_tenantSlug": None,
+                            "netboxTenantUrl": None,
+                        },
                     },
-                })
+                )
                 logger.info("Cleared NetBox IDs on company %s after tenant deletion", company_id)
             return
 
@@ -167,13 +188,16 @@ class SyncEngine:
                     or cf.get("netboxTenantUrl") != tenant_url
                 )
                 if needs_update:
-                    await self._twenty.update_company(company_id, {
-                        "customFields": {
-                            "netbox_tenantId": tenant_id,
-                            "netbox_tenantSlug": tenant_slug,
-                            "netboxTenantUrl": tenant_url,
+                    await self._twenty.update_company(
+                        company_id,
+                        {
+                            "customFields": {
+                                "netbox_tenantId": tenant_id,
+                                "netbox_tenantSlug": tenant_slug,
+                                "netboxTenantUrl": tenant_url,
+                            },
                         },
-                    })
+                    )
                     logger.info("Updated company %s with NetBox tenant %s", company_id, tenant_id)
                 else:
                     logger.debug("Company %s already synced with tenant %s", company_id, tenant_id)
@@ -184,32 +208,40 @@ class SyncEngine:
         if companies:
             existing_company = companies[0]
             cid = existing_company["id"]
-            await self._twenty.update_company(cid, {
-                "customFields": {
-                    "netbox_tenantId": tenant_id,
-                    "netbox_tenantSlug": tenant_slug,
-                    "netboxTenantUrl": tenant_url,
+            await self._twenty.update_company(
+                cid,
+                {
+                    "customFields": {
+                        "netbox_tenantId": tenant_id,
+                        "netbox_tenantSlug": tenant_slug,
+                        "netboxTenantUrl": tenant_url,
+                    },
                 },
-            })
+            )
             logger.info("Linked existing company %s to NetBox tenant %s", cid, tenant_id)
         else:
-            new_company = await self._twenty.create_company({
-                "name": tenant_name,
-                "domainName": "",
-                "customFields": {
-                    "netbox_tenantId": tenant_id,
-                    "netbox_tenantSlug": tenant_slug,
-                    "netboxTenantUrl": tenant_url,
-                },
-            })
+            new_company = await self._twenty.create_company(
+                {
+                    "name": tenant_name,
+                    "domainName": "",
+                    "customFields": {
+                        "netbox_tenantId": tenant_id,
+                        "netbox_tenantSlug": tenant_slug,
+                        "netboxTenantUrl": tenant_url,
+                    },
+                }
+            )
             # Write back the company ID and deeplink to NetBox
             company_url = self._twenty_company_url(new_company["id"])
-            await self._netbox.update_tenant(tenant.get("id"), {
-                "custom_fields": {
-                    "twenty_company_id": new_company["id"],
-                    "twenty_company_url": company_url,
+            await self._netbox.update_tenant(
+                tenant.get("id"),
+                {
+                    "custom_fields": {
+                        "twenty_company_id": new_company["id"],
+                        "twenty_company_url": company_url,
+                    },
                 },
-            })
+            )
             logger.info("Created company %s for NetBox tenant %s", new_company["id"], tenant_id)
 
     def _netbox_resource_url(self, model: str, resource_id: str) -> str:
@@ -240,7 +272,12 @@ class SyncEngine:
                 logger.info("Deleted NetboxResource %s", existing_record["id"])
             return
 
-        name = resource.get("name") or resource.get("prefix") or resource.get("cidr") or f"{resource_type}-{netbox_id}"
+        name = (
+            resource.get("name")
+            or resource.get("prefix")
+            or resource.get("cidr")
+            or f"{resource_type}-{netbox_id}"
+        )
         prefix_cidr = resource.get("prefix") or resource.get("cidr") or ""
 
         record_data: dict[str, Any] = {
@@ -254,7 +291,9 @@ class SyncEngine:
 
         if existing_record:
             # Idempotency
-            changed = any(existing_record.get(k) != v for k, v in record_data.items() if k != "companyId")
+            changed = any(
+                existing_record.get(k) != v for k, v in record_data.items() if k != "companyId"
+            )
             if changed:
                 await self._twenty.update_netbox_resource(existing_record["id"], record_data)
                 logger.info("Updated NetboxResource %s", existing_record["id"])
@@ -266,6 +305,7 @@ class SyncEngine:
 # ---------------------------------------------------------------------------
 # Worker task entry points (called by saq workers)
 # ---------------------------------------------------------------------------
+
 
 def _load_settings() -> Settings:
     return Settings()

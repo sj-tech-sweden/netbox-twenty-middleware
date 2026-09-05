@@ -6,9 +6,7 @@ import hmac
 
 def verify_netbox_signature(payload: bytes, signature: str, secret: str) -> bool:
     """Verify HMAC SHA-512 signature sent by NetBox webhooks."""
-    expected = hmac.new(
-        secret.encode(), payload, hashlib.sha512
-    ).hexdigest()
+    expected = hmac.new(secret.encode(), payload, hashlib.sha512).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 

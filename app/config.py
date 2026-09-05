@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import sys
-import logging
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -39,8 +39,12 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
 
     # Webhook secrets – auto-generated if not set
-    netbox_webhook_secret: str = Field(default_factory=lambda: _generate_secret("NETBOX_WEBHOOK_SECRET"))
-    twenty_webhook_token: str = Field(default_factory=lambda: _generate_secret("TWENTY_WEBHOOK_TOKEN"))
+    netbox_webhook_secret: str = Field(
+        default_factory=lambda: _generate_secret("NETBOX_WEBHOOK_SECRET"),
+    )
+    twenty_webhook_token: str = Field(
+        default_factory=lambda: _generate_secret("TWENTY_WEBHOOK_TOKEN"),
+    )
 
     # Sync source identifier for loop prevention
     sync_source_header: str = "X-Sync-Source"

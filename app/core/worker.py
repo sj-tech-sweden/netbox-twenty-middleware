@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
 
 from app.config import Settings
 from app.services.sync_engine import SyncEngine
@@ -15,15 +14,15 @@ settings = Settings()
 
 async def consume_queue(queue_name: str, handler_name: str) -> None:
     """Poll a Valkey list queue and dispatch events to the sync engine."""
-    import httpx
-
-    valkey_url = f"valkey://{settings.valkey_host}:{settings.valkey_port}"
     engine = SyncEngine(settings)
 
-    # Use valkey-py async client directly for queue consumption
     from valkey import Valkey
 
-    client = Valkey(host=settings.valkey_host, port=settings.valkey_port, decode_responses=True)
+    client = Valkey(
+        host=settings.valkey_host,
+        port=settings.valkey_port,
+        decode_responses=True,
+    )
     await client.ping()
     logger.info("Worker connected to Valkey, consuming from '%s'", queue_name)
 

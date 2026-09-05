@@ -95,10 +95,13 @@ class TwentyClient:
         return data.get("data", [])
 
     async def create_field(self, object_name: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return await self._post("/rest/metadata/fieldMetadata", json={
-            "objectName": object_name,
-            **payload,
-        })
+        return await self._post(
+            "/rest/metadata/fieldMetadata",
+            json={
+                "objectName": object_name,
+                **payload,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Custom Object Definitions
@@ -115,7 +118,11 @@ class TwentyClient:
     async def create_object(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._post("/rest/metadata/objectMetadata", json=payload)
 
-    async def create_object_field(self, object_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def create_object_field(
+        self,
+        object_name: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         return await self._post(
             f"/rest/metadata/objectMetadata/{object_name}/fields",
             json=payload,
@@ -139,7 +146,10 @@ class TwentyClient:
     # Custom Object Records (NetboxResource)
     # ------------------------------------------------------------------
 
-    async def get_netbox_resources(self, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    async def get_netbox_resources(
+        self,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         params = filters or {}
         data = await self._get("/rest/netboxResources", params=params)
         return data.get("data", [])
@@ -147,7 +157,11 @@ class TwentyClient:
     async def create_netbox_resource(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._post("/rest/netboxResources", json=payload)
 
-    async def update_netbox_resource(self, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def update_netbox_resource(
+        self,
+        record_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         return await self._patch(f"/rest/netboxResources/{record_id}", json=payload)
 
     # ------------------------------------------------------------------

@@ -21,8 +21,8 @@ def anyio_backend():
 def mock_settings():
     import app.api.v1.webhooks as wh_mod
 
-    with patch.object(wh_mod, "_settings", None), patch("app.api.v1.webhooks.Settings") as MockCls:
-        instance = MockCls.return_value
+    with patch.object(wh_mod, "_settings", None), patch("app.api.v1.webhooks.Settings") as mock_cls:
+        instance = mock_cls.return_value
         instance.twenty_webhook_token = "test-twenty-token"
         instance.netbox_webhook_secret = "test-netbox-secret"
         instance.valkey_host = "localhost"
@@ -31,10 +31,12 @@ def mock_settings():
 
 
 def _twenty_payload(event: str = "company.created", data: dict[str, Any] | None = None) -> bytes:
-    return json.dumps({
-        "event": event,
-        "data": data or {"id": "comp-123", "name": "Acme Corp"},
-    }).encode()
+    return json.dumps(
+        {
+            "event": event,
+            "data": data or {"id": "comp-123", "name": "Acme Corp"},
+        }
+    ).encode()
 
 
 def _netbox_signature(payload: bytes, secret: str) -> str:
@@ -46,16 +48,20 @@ def _netbox_payload(
     action: str = "created",
     data: dict[str, Any] | None = None,
 ) -> bytes:
-    return json.dumps({
-        "model": model,
-        "action": action,
-        "data": data or {"id": 1, "name": "Acme Corp", "slug": "acme-corp", "custom_fields": {}},
-    }).encode()
+    return json.dumps(
+        {
+            "model": model,
+            "action": action,
+            "data": data
+            or {"id": 1, "name": "Acme Corp", "slug": "acme-corp", "custom_fields": {}},
+        }
+    ).encode()
 
 
 # ------------------------------------------------------------------
 # Twenty webhook tests
 # ------------------------------------------------------------------
+
 
 class TestTwentyWebhook:
     @pytest.mark.anyio
@@ -157,6 +163,7 @@ class TestTwentyWebhook:
 # NetBox webhook tests
 # ------------------------------------------------------------------
 
+
 class TestNetboxWebhook:
     @pytest.mark.anyio
     async def test_requires_signature(self, mock_settings):
@@ -223,6 +230,7 @@ class TestNetboxWebhook:
 # Health endpoint tests
 # ------------------------------------------------------------------
 
+
 class TestHealthEndpoints:
     @pytest.mark.anyio
     async def test_healthz(self):
@@ -234,8 +242,10 @@ class TestHealthEndpoints:
 
     @pytest.mark.anyio
     async def test_readyz_returns_json(self):
-        with patch("app.api.v1.router.get_valkey_client") as mock_vk, \
-             patch("app.api.v1.router.NetBoxClient") as MockNB:
+        with (
+            patch("app.api.v1.router.get_valkey_client") as mock_vk,
+            patch("app.api.v1.router.NetBoxClient") as mock_nb_cls,
+        ):
             mock_client = AsyncMock()
             mock_client.ping = AsyncMock()
             mock_vk.return_value = mock_client
@@ -243,7 +253,7 @@ class TestHealthEndpoints:
             nb_instance = AsyncMock()
             nb_instance.is_healthy.return_value = True
             nb_instance.close = AsyncMock()
-            MockNB.return_value = nb_instance
+            mock_nb_cls.return_value = nb_instance
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:

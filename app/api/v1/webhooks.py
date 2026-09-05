@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 from app.config import Settings
 from app.core.security import verify_netbox_signature, verify_twenty_token
-from app.core.valkey import get_valkey_client, enqueue_event
+from app.core.valkey import enqueue_event, get_valkey_client
 
 logger = logging.getLogger("netbox_twenty.webhooks")
 

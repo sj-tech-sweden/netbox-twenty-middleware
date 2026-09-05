@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.config import Settings
-from app.core.utils import extract_model_name, sanitize_netbox_tenant_name, slugify
 from app.services.sync_engine import SyncEngine
 
 
@@ -28,11 +26,11 @@ def settings():
 @pytest.fixture
 def engine(settings):
     with (
-        patch("app.services.sync_engine.NetBoxClient") as MockNB,
-        patch("app.services.sync_engine.TwentyClient") as MockTwenty,
+        patch("app.services.sync_engine.NetBoxClient") as mock_nb,
+        patch("app.services.sync_engine.TwentyClient") as mock_twenty,
     ):
-        nb = MockNB.return_value
-        twenty = MockTwenty.return_value
+        nb = mock_nb.return_value
+        twenty = mock_twenty.return_value
         eng = SyncEngine(settings)
         eng._netbox = nb
         eng._twenty = twenty
@@ -42,6 +40,7 @@ def engine(settings):
 # ------------------------------------------------------------------
 # Twenty → NetBox sync tests
 # ------------------------------------------------------------------
+
 
 class TestTwentyToNetbox:
     @pytest.mark.anyio
@@ -57,12 +56,18 @@ class TestTwentyToNetbox:
         assert call_args["name"] == "Acme Corp"
         assert call_args["slug"] == "acme-corp"
         assert call_args["custom_fields"]["twenty_company_id"] == "comp-1"
-        assert call_args["custom_fields"]["twenty_company_url"] == "http://twenty:3000/object/company/comp-1"
+        assert (
+            call_args["custom_fields"]["twenty_company_url"]
+            == "http://twenty:3000/object/company/comp-1"
+        )
 
         twenty.update_company.assert_called_once()
         update_args = twenty.update_company.call_args[0]
         assert update_args[0] == "comp-1"
-        assert update_args[1]["customFields"]["netboxTenantUrl"] == "http://netbox:8000/tenancy/tenants/42/"
+        assert (
+            update_args[1]["customFields"]["netboxTenantUrl"]
+            == "http://netbox:8000/tenancy/tenants/42/"
+        )
 
     @pytest.mark.anyio
     async def test_company_created_with_existing_tenant_id_updates(self, engine):
@@ -81,7 +86,10 @@ class TestTwentyToNetbox:
         assert patch_args[0] == 42
         assert patch_args[1]["name"] == "New Name"
         assert patch_args[1]["slug"] == "new-name"
-        assert patch_args[1]["custom_fields"]["twenty_company_url"] == "http://twenty:3000/object/company/comp-1"
+        assert (
+            patch_args[1]["custom_fields"]["twenty_company_url"]
+            == "http://twenty:3000/object/company/comp-1"
+        )
 
     @pytest.mark.anyio
     async def test_company_updated_patches_tenant(self, engine):
@@ -93,10 +101,12 @@ class TestTwentyToNetbox:
             "custom_fields": {"twenty_company_id": "comp-1"},
         }
 
-        await eng._sync_company_to_tenant({
-            "id": "comp-1",
-            "name": "New Name",
-        })
+        await eng._sync_company_to_tenant(
+            {
+                "id": "comp-1",
+                "name": "New Name",
+            }
+        )
 
         nb.update_tenant.assert_called_once()
         patch_args = nb.update_tenant.call_args[0]
@@ -117,10 +127,12 @@ class TestTwentyToNetbox:
             },
         }
 
-        await eng._sync_company_to_tenant({
-            "id": "comp-1",
-            "name": "Acme Corp",
-        })
+        await eng._sync_company_to_tenant(
+            {
+                "id": "comp-1",
+                "name": "Acme Corp",
+            }
+        )
 
         nb.update_tenant.assert_not_called()
 
@@ -156,10 +168,12 @@ class TestTwentyToNetbox:
         eng, nb, twenty = engine
         nb.delete_tenant.side_effect = Exception("NetBox error")
         # Should not raise
-        await eng._delete_tenant_for_company({
-            "id": "comp-1",
-            "customFields": {"netbox_tenantId": "42"},
-        })
+        await eng._delete_tenant_for_company(
+            {
+                "id": "comp-1",
+                "customFields": {"netbox_tenantId": "42"},
+            }
+        )
 
     @pytest.mark.anyio
     async def test_unhandled_event_type_ignored(self, engine):
@@ -172,6 +186,7 @@ class TestTwentyToNetbox:
 # ------------------------------------------------------------------
 # NetBox → Twenty sync tests
 # ------------------------------------------------------------------
+
 
 class TestNetboxToTwenty:
     @pytest.mark.anyio
@@ -192,7 +207,9 @@ class TestNetboxToTwenty:
         args = twenty.update_company.call_args[0]
         assert args[0] == "comp-1"
         assert args[1]["customFields"]["netbox_tenantId"] == "10"
-        assert args[1]["customFields"]["netboxTenantUrl"] == "http://netbox:8000/tenancy/tenants/10/"
+        assert (
+            args[1]["customFields"]["netboxTenantUrl"] == "http://netbox:8000/tenancy/tenants/10/"
+        )
 
     @pytest.mark.anyio
     async def test_tenant_created_skips_if_already_synced(self, engine):
@@ -233,7 +250,9 @@ class TestNetboxToTwenty:
 
         twenty.update_company.assert_called_once()
         args = twenty.update_company.call_args[0]
-        assert args[1]["customFields"]["netboxTenantUrl"] == "http://netbox:8000/tenancy/tenants/10/"
+        assert (
+            args[1]["customFields"]["netboxTenantUrl"] == "http://netbox:8000/tenancy/tenants/10/"
+        )
 
     @pytest.mark.anyio
     async def test_tenant_created_creates_company_when_not_found(self, engine):
@@ -254,7 +273,10 @@ class TestNetboxToTwenty:
         update_args = nb.update_tenant.call_args[0]
         assert update_args[0] == 10
         assert update_args[1]["custom_fields"]["twenty_company_id"] == "comp-new"
-        assert update_args[1]["custom_fields"]["twenty_company_url"] == "http://twenty:3000/object/company/comp-new"
+        assert (
+            update_args[1]["custom_fields"]["twenty_company_url"]
+            == "http://twenty:3000/object/company/comp-new"
+        )
 
     @pytest.mark.anyio
     async def test_tenant_deleted_clears_company_fields(self, engine):
@@ -292,6 +314,7 @@ class TestNetboxToTwenty:
 # VRF / Prefix sync tests
 # ------------------------------------------------------------------
 
+
 class TestInfraSync:
     @pytest.mark.anyio
     async def test_vrf_synced_to_netbox_resource(self, engine):
@@ -327,31 +350,37 @@ class TestInfraSync:
     async def test_vrf_update_patches_existing_resource(self, engine):
         eng, nb, twenty = engine
         vrf = {"id": 5, "name": "Updated VRF", "tenant": {"id": 10}}
-        twenty.get_netbox_resources.return_value = [{"id": "res-1", "name": "Old VRF", "type": "VRF"}]
+        existing = [{"id": "res-1", "name": "Old VRF", "type": "VRF"}]
+        twenty.get_netbox_resources.return_value = existing
 
         await eng._sync_infra_to_netbox_resource("vrf", "updated", vrf)
 
-        twenty.update_netbox_resource.assert_called_once_with("res-1", {
-            "name": "Updated VRF",
-            "type": "VRF",
-            "prefixCidr": "",
-            "netboxId": "5",
-            "companyId": "10",
-            "netboxUrl": "http://netbox:8000/ipam/vrfs/5/",
-        })
+        twenty.update_netbox_resource.assert_called_once_with(
+            "res-1",
+            {
+                "name": "Updated VRF",
+                "type": "VRF",
+                "prefixCidr": "",
+                "netboxId": "5",
+                "companyId": "10",
+                "netboxUrl": "http://netbox:8000/ipam/vrfs/5/",
+            },
+        )
 
     @pytest.mark.anyio
     async def test_vrf_update_skips_if_identical(self, engine):
         eng, nb, twenty = engine
         vrf = {"id": 5, "name": "Mgmt VRF", "tenant": {"id": 10}}
-        twenty.get_netbox_resources.return_value = [{
-            "id": "res-1",
-            "name": "Mgmt VRF",
-            "type": "VRF",
-            "prefixCidr": "",
-            "netboxId": "5",
-            "netboxUrl": "http://netbox:8000/ipam/vrfs/5/",
-        }]
+        twenty.get_netbox_resources.return_value = [
+            {
+                "id": "res-1",
+                "name": "Mgmt VRF",
+                "type": "VRF",
+                "prefixCidr": "",
+                "netboxId": "5",
+                "netboxUrl": "http://netbox:8000/ipam/vrfs/5/",
+            }
+        ]
 
         await eng._sync_infra_to_netbox_resource("vrf", "updated", vrf)
 
@@ -425,29 +454,40 @@ class TestInfraSync:
 # Event routing tests
 # ------------------------------------------------------------------
 
+
 class TestEventRouting:
     @pytest.mark.anyio
     async def test_company_created_routes_correctly(self, engine):
         eng, nb, twenty = engine
         nb.create_tenant.return_value = {"id": 1}
-        await eng.handle_twenty_event({"event": "company.created", "data": {"id": "c1", "name": "X"}})
+        event = {"event": "company.created", "data": {"id": "c1", "name": "X"}}
+        await eng.handle_twenty_event(event)
         nb.create_tenant.assert_called_once()
 
     @pytest.mark.anyio
     async def test_company_updated_routes_correctly(self, engine):
         eng, nb, twenty = engine
-        nb.get_tenant.return_value = {"id": 1, "name": "X", "slug": "x", "custom_fields": {"twenty_company_id": "c1"}}
-        await eng.handle_twenty_event({"event": "company.updated", "data": {"id": "c1", "name": "X"}})
+        tenant_data = {
+            "id": 1,
+            "name": "X",
+            "slug": "x",
+            "custom_fields": {"twenty_company_id": "c1"},
+        }
+        nb.get_tenant.return_value = tenant_data
+        event = {"event": "company.updated", "data": {"id": "c1", "name": "X"}}
+        await eng.handle_twenty_event(event)
         # No update needed (identical) → not called
         nb.update_tenant.assert_not_called()
 
     @pytest.mark.anyio
     async def test_company_deleted_routes_correctly(self, engine):
         eng, nb, twenty = engine
-        await eng.handle_twenty_event({
-            "event": "company.deleted",
-            "data": {"id": "c1", "customFields": {"netbox_tenantId": "5"}},
-        })
+        await eng.handle_twenty_event(
+            {
+                "event": "company.deleted",
+                "data": {"id": "c1", "customFields": {"netbox_tenantId": "5"}},
+            }
+        )
         nb.delete_tenant.assert_called_once_with(5)
 
     @pytest.mark.anyio
@@ -455,20 +495,24 @@ class TestEventRouting:
         eng, nb, twenty = engine
         twenty.get_companies.return_value = [{"id": "c1"}]
         twenty.get_company.return_value = {"id": "c1", "customFields": {}}
-        await eng.handle_netbox_event({
-            "model": "tenant",
-            "action": "created",
-            "data": {"id": 1, "name": "T", "slug": "t", "custom_fields": {}},
-        })
+        await eng.handle_netbox_event(
+            {
+                "model": "tenant",
+                "action": "created",
+                "data": {"id": 1, "name": "T", "slug": "t", "custom_fields": {}},
+            }
+        )
         twenty.update_company.assert_called_once()
 
     @pytest.mark.anyio
     async def test_netbox_vrf_routes_correctly(self, engine):
         eng, nb, twenty = engine
         twenty.get_netbox_resources.return_value = []
-        await eng.handle_netbox_event({
-            "model": "vrf",
-            "action": "created",
-            "data": {"id": 1, "name": "V", "tenant": {"id": 10}},
-        })
+        await eng.handle_netbox_event(
+            {
+                "model": "vrf",
+                "action": "created",
+                "data": {"id": 1, "name": "V", "tenant": {"id": 10}},
+            }
+        )
         twenty.create_netbox_resource.assert_called_once()

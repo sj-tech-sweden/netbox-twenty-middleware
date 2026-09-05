@@ -29,19 +29,37 @@ async def _ensure_company_custom_fields(client: TwentyClient) -> None:
     existing_names = {f["name"] for f in existing_fields}
 
     fields_to_create = [
-        {"name": "netboxTenantId", "label": "NetBox Tenant ID", "type": "TEXT", "isRequired": False},
-        {"name": "netboxTenantSlug", "label": "NetBox Tenant Slug", "type": "TEXT", "isRequired": False},
-        {"name": "netboxTenantUrl", "label": "NetBox Tenant URL", "type": "LINKS", "isRequired": False},
+        {
+            "name": "netboxTenantId",
+            "label": "NetBox Tenant ID",
+            "type": "TEXT",
+            "isRequired": False,
+        },
+        {
+            "name": "netboxTenantSlug",
+            "label": "NetBox Tenant Slug",
+            "type": "TEXT",
+            "isRequired": False,
+        },
+        {
+            "name": "netboxTenantUrl",
+            "label": "NetBox Tenant URL",
+            "type": "LINKS",
+            "isRequired": False,
+        },
     ]
 
     for field in fields_to_create:
         if field["name"] not in existing_names:
-            await client.create_field("company", {
-                "label": field["label"],
-                "type": field["type"],
-                "isRequired": field["isRequired"],
-                "name": field["name"],
-            })
+            await client.create_field(
+                "company",
+                {
+                    "label": field["label"],
+                    "type": field["type"],
+                    "isRequired": field["isRequired"],
+                    "name": field["name"],
+                },
+            )
             logger.info("Created field '%s' on Company", field["name"])
         else:
             logger.debug("Field '%s' already exists on Company", field["name"])
@@ -50,18 +68,20 @@ async def _ensure_company_custom_fields(client: TwentyClient) -> None:
 async def _ensure_netbox_resource_object(client: TwentyClient) -> None:
     meta = await client.get_object_metadata(NETBOX_RESOURCE_OBJECT_NAME)
     if meta is None:
-        await client.create_object({
-            "nameSingular": NETBOX_RESOURCE_OBJECT_NAME,
-            "namePlural": "netboxResources",
-            "labelSingular": "NetboxResource",
-            "labelPlural": "NetboxResources",
-            "description": "Tracks NetBox infrastructure resources (VRFs, Prefixes)",
-            "icon": "IconServer",
-            "isCustom": True,
-            "isActive": True,
-            "isSystem": False,
-            "fields": [],
-        })
+        await client.create_object(
+            {
+                "nameSingular": NETBOX_RESOURCE_OBJECT_NAME,
+                "namePlural": "netboxResources",
+                "labelSingular": "NetboxResource",
+                "labelPlural": "NetboxResources",
+                "description": "Tracks NetBox infrastructure resources (VRFs, Prefixes)",
+                "icon": "IconServer",
+                "isCustom": True,
+                "isActive": True,
+                "isSystem": False,
+                "fields": [],
+            }
+        )
         logger.info("Created custom object '%s'", NETBOX_RESOURCE_OBJECT_NAME)
         # Refresh metadata to get the actual field list
         meta = await client.get_object_metadata(NETBOX_RESOURCE_OBJECT_NAME)
@@ -72,8 +92,13 @@ async def _ensure_netbox_resource_object(client: TwentyClient) -> None:
 
     fields_to_create = [
         {"name": "name", "label": "Name", "type": "TEXT", "isRequired": True},
-        {"name": "type", "label": "Type", "type": "SELECT", "isRequired": True,
-         "options": [{"label": "VRF", "value": "VRF"}, {"label": "Prefix", "value": "Prefix"}]},
+        {
+            "name": "type",
+            "label": "Type",
+            "type": "SELECT",
+            "isRequired": True,
+            "options": [{"label": "VRF", "value": "VRF"}, {"label": "Prefix", "value": "Prefix"}],
+        },
         {"name": "prefixCidr", "label": "Prefix / CIDR", "type": "TEXT", "isRequired": False},
         {"name": "netboxId", "label": "NetBox ID", "type": "TEXT", "isRequired": True},
         {"name": "companyId", "label": "Company ID", "type": "TEXT", "isRequired": False},
@@ -92,7 +117,11 @@ async def _ensure_netbox_resource_object(client: TwentyClient) -> None:
             await client.create_object_field(NETBOX_RESOURCE_OBJECT_NAME, create_payload)
             logger.info("Created field '%s' on %s", field["name"], NETBOX_RESOURCE_OBJECT_NAME)
         else:
-            logger.debug("Field '%s' already exists on %s", field["name"], NETBOX_RESOURCE_OBJECT_NAME)
+            logger.debug(
+                "Field '%s' already exists on %s",
+                field["name"],
+                NETBOX_RESOURCE_OBJECT_NAME,
+            )
 
 
 async def _ensure_webhook(settings: Settings, client: TwentyClient) -> None:
@@ -101,8 +130,10 @@ async def _ensure_webhook(settings: Settings, client: TwentyClient) -> None:
 
     webhooks = await client.get_webhooks()
     sync_webhooks = [
-        w for w in webhooks
-        if w.get("targetUrl") == webhook_url or w.get("description", "") == "NetBox Twenty Middleware"
+        w
+        for w in webhooks
+        if w.get("targetUrl") == webhook_url
+        or w.get("description", "") == "NetBox Twenty Middleware"
     ]
 
     webhook_payload: dict[str, Any] = {

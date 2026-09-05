@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import os
-
-import pytest
-
 from app.config import Settings
 
 
@@ -73,5 +69,6 @@ class TestSettings:
 
     def test_get_settings_returns_instance(self):
         from app.config import get_settings
+
         s = get_settings()
         assert isinstance(s, Settings)

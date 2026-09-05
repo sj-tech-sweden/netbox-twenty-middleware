@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import time
-
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Response
 
 from app.config import Settings
 from app.core.valkey import get_valkey_client

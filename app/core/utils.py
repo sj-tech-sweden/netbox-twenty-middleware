@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import unicodedata
 
-
 _SLUGIFY_RE = re.compile(r"[^\w\s-]", re.UNICODE)
 _MULTI_DASH_RE = re.compile(r"[-\s]+", re.UNICODE)
 
