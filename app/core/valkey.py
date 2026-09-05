@@ -4,7 +4,6 @@ import json
 import logging
 from typing import Any
 
-import saq
 from valkey import Valkey
 
 logger = logging.getLogger("netbox_twenty.valkey")
@@ -39,21 +38,3 @@ def enqueue_event(client: Valkey, queue_name: str, payload: dict[str, Any]) -> s
     client.rpush(queue_name, data)
     logger.info("Enqueued event to %s (key=%s)", queue_name, job_key)
     return job_key
-
-
-# ---------------------------------------------------------------------------
-# saq-based background queue (used by the worker process)
-# ---------------------------------------------------------------------------
-
-TASK_REGISTRY: dict[str, saq.Task] = {}
-
-
-def register_task(name: str, func: Any) -> saq.Task:
-    task = saq.Task(func, name=name)
-    TASK_REGISTRY[name] = task
-    return task
-
-
-def create_queue(host: str = "valkey", port: int = 6379, queue_name: str = "default") -> saq.Queue:
-    valkey_url = f"valkey://{host}:{port}"
-    return saq.Queue(name=queue_name, url=valkey_url, tasks=list(TASK_REGISTRY.values()))
