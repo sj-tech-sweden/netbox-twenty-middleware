@@ -257,8 +257,7 @@ class SyncEngine:
         resource_type = "VRF" if model == "vrf" else "Prefix"
         netbox_id = str(resource.get("id", ""))
         tenant_id = resource.get("tenant", {})
-        if isinstance(tenant_id, dict):
-            tenant_id = str(tenant_id.get("id", ""))
+        tenant_id = str(tenant_id.get("id", "")) if isinstance(tenant_id, dict) else str(tenant_id)
 
         netbox_url = self._netbox_resource_url(model, netbox_id)
 

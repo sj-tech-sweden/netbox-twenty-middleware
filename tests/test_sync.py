@@ -116,7 +116,13 @@ class TestTwentyToNetbox:
             "custom_fields": {"twenty_company_id": "comp-1", "twenty_company_url": "old-url"},
         }
 
-        await eng._sync_company_to_tenant({"id": "comp-1", "name": "New Name"})
+        await eng._sync_company_to_tenant(
+            {
+                "id": "comp-1",
+                "name": "New Name",
+                "customFields": {"netbox_tenantId": "42"},
+            }
+        )
 
         nb.update_tenant.assert_called_once()
         patch_args = nb.update_tenant.call_args[0]
@@ -142,6 +148,7 @@ class TestTwentyToNetbox:
             {
                 "id": "comp-1",
                 "name": "New Name",
+                "customFields": {"netbox_tenantId": "42"},
             }
         )
 
@@ -261,6 +268,7 @@ class TestNetboxToTwenty:
             "id": "comp-1",
             "customFields": {
                 "netbox_tenantId": "10",
+                "netbox_tenantSlug": "acme-corp",
                 "netboxTenantUrl": "http://netbox:8000/tenancy/tenants/10/",
             },
         }
