@@ -18,16 +18,22 @@
       "automergeStrategy": "squash"
     },
     {
-      "matchPackagePrefixes": ["docker/"],
-      "groupName": "Docker actions"
+      "groupName": "Docker actions",
+      "matchPackageNames": [
+        "docker/{/,}**"
+      ]
     },
     {
-      "matchPackagePrefixes": ["python"],
-      "groupName": "Python dependencies"
+      "groupName": "Python dependencies",
+      "matchPackageNames": [
+        "python{/,}**"
+      ]
     }
   ],
   "docker-compose": {
-    "fileMatch": ["docker-compose\\.yml$"]
+    "managerFilePatterns": [
+      "/docker-compose\\.yml$/"
+    ]
   },
   "postUpdateOptions": ["pipCompileDocker"]
 }
