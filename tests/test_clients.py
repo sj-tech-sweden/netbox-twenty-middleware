@@ -198,8 +198,7 @@ class TestNetBoxClient:
 def tw_client():
     with patch("app.services.twenty_client.httpx.AsyncClient") as cls:
         inner = MagicMock()
-        for verb in ("get", "post", "patch", "put", "delete"):
-            setattr(inner, verb, AsyncMock())
+        inner.request = AsyncMock()
         inner.aclose = AsyncMock()
         cls.return_value = inner
         settings = base_settings()
@@ -217,82 +216,95 @@ class TestTwentyClient:
     @pytest.mark.anyio
     async def test_company_get_unwraps(self, tw_client):
         client, inner, _, _ = tw_client
-        inner.get.return_value = make_resp(200, {"data": {"company": {"id": "c1"}}})
+        inner.request.return_value = make_resp(200, {"data": {"company": {"id": "c1"}}})
         result = await client.get_company("c1")
         assert result == {"id": "c1"}
-        inner.get.assert_called_with("/rest/companies/c1", params=None)
+        inner.request.assert_called_with("GET", "/rest/companies/c1", params=None, json=None)
 
     @pytest.mark.anyio
     async def test_company_get_404(self, tw_client):
         client, inner, _, _ = tw_client
-        inner.get.return_value = make_error_resp(404)
+        inner.request.return_value = make_error_resp(404)
         assert await client.get_company("x") is None
 
     @pytest.mark.anyio
     async def test_company_list_and_crud(self, tw_client):
         client, inner, _, _ = tw_client
-        inner.get.return_value = make_resp(200, {"data": {"companies": [{"id": "c1"}]}})
+        inner.request.return_value = make_resp(200, {"data": {"companies": [{"id": "c1"}]}})
         result = await client.get_companies()
         assert result == [{"id": "c1"}]
+        inner.request.assert_called_with("GET", "/rest/companies", params={}, json=None)
 
-        inner.post.return_value = make_resp(200, {"data": {"createCompany": {"id": "c1"}}})
+        inner.request.return_value = make_resp(200, {"data": {"createCompany": {"id": "c1"}}})
         result = await client.create_company({"name": "X"})
         assert result == {"id": "c1"}
-        inner.post.assert_called_with("/rest/companies", json={"name": "X"})
+        inner.request.assert_called_with("POST", "/rest/companies", json={"name": "X"}, params=None)
 
-        inner.patch.return_value = make_resp(200, {"data": {"updateCompany": {"id": "c1"}}})
+        inner.request.return_value = make_resp(200, {"data": {"updateCompany": {"id": "c1"}}})
         await client.update_company("c1", {"name": "Y"})
-        inner.patch.assert_called_with("/rest/companies/c1", json={"name": "Y"})
+        inner.request.assert_called_with(
+            "PATCH", "/rest/companies/c1", json={"name": "Y"}, params=None
+        )
 
     @pytest.mark.anyio
     async def test_person_crud(self, tw_client):
         client, inner, _, _ = tw_client
-        inner.get.return_value = make_resp(200, {"data": {"people": [{"id": "p1"}]}})
+        inner.request.return_value = make_resp(200, {"data": {"people": [{"id": "p1"}]}})
         result = await client.get_people()
         assert result == [{"id": "p1"}]
+        inner.request.assert_called_with("GET", "/rest/people", params={}, json=None)
 
-        inner.post.return_value = make_resp(200, {"data": {"createPerson": {"id": "p1"}}})
+        inner.request.return_value = make_resp(200, {"data": {"createPerson": {"id": "p1"}}})
         result = await client.create_person({"name": {}})
         assert result == {"id": "p1"}
-        inner.post.assert_called_with("/rest/people", json={"name": {}})
+        inner.request.assert_called_with("POST", "/rest/people", json={"name": {}}, params=None)
 
     @pytest.mark.anyio
     async def test_metadata_graphql_selection(self, tw_client):
         client, inner, _, _ = tw_client
-        inner.post.return_value = make_resp(200, {"data": {"objects": {"edges": []}}})
+        inner.request.return_value = make_resp(200, {"data": {"objects": {"edges": []}}})
         await client._metadata_graphql("query X")
-        inner.post.assert_called_with("/metadata", json={"query": "query X"})
+        inner.request.assert_called_with(
+            "POST", "/metadata", json={"query": "query X"}, params=None
+        )
         await client._metadata_graphql("query Y", {"a": 1})
-        inner.post.assert_called_with("/metadata", json={"query": "query Y", "variables": {"a": 1}})
+        inner.request.assert_called_with(
+            "POST", "/metadata", json={"query": "query Y", "variables": {"a": 1}}, params=None
+        )
 
     @pytest.mark.anyio
     async def test_webhooks(self, tw_client):
         client, inner, _, _ = tw_client
-        inner.post.return_value = make_resp(200, {"data": {"webhooks": [{"id": "w1"}]}})
+        inner.request.return_value = make_resp(200, {"data": {"webhooks": [{"id": "w1"}]}})
         result = await client.get_webhooks()
         assert result == [{"id": "w1"}]
-        inner.post.assert_called_once()
-        assert inner.post.call_args.args[0] == "/metadata"
+        inner.request.assert_called_once()
+        assert inner.request.call_args.args[0] == "POST"
+        assert inner.request.call_args.args[1] == "/metadata"
 
     @pytest.mark.anyio
     async def test_netbox_resources(self, tw_client):
         client, inner, _, _ = tw_client
-        inner.get.return_value = make_resp(200, {"data": {"netboxresources": [{"id": "r1"}]}})
+        inner.request.return_value = make_resp(200, {"data": {"netboxresources": [{"id": "r1"}]}})
         result = await client.get_netbox_resources()
         assert result == [{"id": "r1"}]
-        inner.get.assert_called_with("/rest/netboxresources", params={})
+        inner.request.assert_called_with("GET", "/rest/netboxresources", params={}, json=None)
 
-        inner.post.return_value = make_resp(200, {"data": {"createNetboxresource": {"id": "r1"}}})
+        inner.request.return_value = make_resp(
+            200, {"data": {"createNetboxresource": {"id": "r1"}}}
+        )
         result = await client.create_netbox_resource({"name": "x"})
         assert result == {"id": "r1"}
-        inner.post.assert_called_with("/rest/netboxresources", json={"name": "x"})
+        inner.request.assert_called_with(
+            "POST", "/rest/netboxresources", json={"name": "x"}, params=None
+        )
 
     @pytest.mark.anyio
     async def test_health(self, tw_client):
         client, inner, _, _ = tw_client
-        inner.get.return_value = make_resp(200)
+        inner.request.return_value = make_resp(200)
         assert await client.is_healthy() is True
-        inner.get.return_value = make_resp(500)
+        inner.request.return_value = make_resp(500)
         assert await client.is_healthy() is False
 
     @pytest.mark.anyio
@@ -301,3 +313,55 @@ class TestTwentyClient:
         inner.aclose = AsyncMock()
         await client.close()
         inner.aclose.assert_awaited()
+
+
+class TestTwentyClientRateLimit:
+    @pytest.mark.anyio
+    async def test_request_retries_on_429_then_succeeds(self, tw_client):
+        import asyncio
+
+        client, inner, _, _ = tw_client
+        rate = MagicMock()
+        rate.status_code = 429
+        rate.is_success = False
+        rate.headers = {}
+        rate.request = MagicMock()
+        ok = make_resp(200, {"data": {"people": []}})
+        inner.request.side_effect = [rate, ok]
+        # Patch sleep so the test runs fast.
+        real_sleep = asyncio.sleep
+
+        async def fast_sleep(_):
+            return None
+
+        asyncio.sleep = fast_sleep
+        try:
+            result = await client.get_people()
+        finally:
+            asyncio.sleep = real_sleep
+        assert result == []
+        assert inner.request.call_count == 2
+
+    @pytest.mark.anyio
+    async def test_request_gives_up_after_retries(self, tw_client):
+        import asyncio
+
+        client, inner, _, _ = tw_client
+        rate = MagicMock()
+        rate.status_code = 429
+        rate.is_success = False
+        rate.headers = {}
+        rate.request = MagicMock()
+        inner.request.return_value = rate
+        real_sleep = asyncio.sleep
+
+        async def fast_sleep(_):
+            return None
+
+        asyncio.sleep = fast_sleep
+        try:
+            resp = await client._request("GET", "/rest/people")
+        finally:
+            asyncio.sleep = real_sleep
+        assert resp.status_code == 429
+        assert inner.request.call_count == 7  # 1 initial + 6 retries
