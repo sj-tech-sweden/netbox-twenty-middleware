@@ -260,11 +260,48 @@ class TestTwentyClient:
         inner.request.assert_called_with("POST", "/rest/people", json={"name": {}}, params=None)
 
     @pytest.mark.anyio
+    async def test_people_by_netbox_contact_id_scan(self, tw_client):
+        client, inner, _, _ = tw_client
+        page1 = {
+            "data": {
+                "people": {
+                    "edges": [
+                        {"node": {"id": "p1", "netboxContactId": "15"}},
+                        {"node": {"id": "p2", "netboxContactId": None}},
+                    ],
+                    "pageInfo": {"hasNextPage": True, "endCursor": "p2"},
+                }
+            }
+        }
+        page2 = {
+            "data": {
+                "people": {
+                    "edges": [{"node": {"id": "p3", "netboxContactId": "20"}}],
+                    "pageInfo": {"hasNextPage": False},
+                }
+            }
+        }
+        inner.request.side_effect = [make_resp(200, page1), make_resp(200, page2)]
+        index = await client.get_people_by_netbox_contact_id()
+        assert index == {
+            "15": {"id": "p1", "netboxContactId": "15"},
+            "20": {"id": "p3", "netboxContactId": "20"},
+        }
+        assert inner.request.call_count == 2
+
+    @pytest.mark.anyio
     async def test_person_by_contact_id_graphql(self, tw_client):
         client, inner, _, _ = tw_client
         inner.request.return_value = make_resp(
             200,
-            {"data": {"people": {"edges": [{"node": {"id": "p1", "netboxContactId": "15"}}]}}},
+            {
+                "data": {
+                    "people": {
+                        "edges": [{"node": {"id": "p1", "netboxContactId": "15"}}],
+                        "pageInfo": {"hasNextPage": False},
+                    }
+                }
+            },
         )
         result = await client.get_person_by_contact_id("15")
         assert result == {"id": "p1", "netboxContactId": "15"}

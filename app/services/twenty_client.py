@@ -222,42 +222,57 @@ class TwentyClient:
     async def delete_person(self, person_id: str) -> None:
         await self._delete(f"/rest/people/{person_id}")
 
-    async def get_person_by_contact_id(self, contact_id: str) -> dict[str, Any] | None:
-        """Find a person by its linked NetBox contact id.
+    async def get_people_by_netbox_contact_id(self) -> dict[str, dict[str, Any]]:
+        """GraphQL paged fetch of all people, indexed by linked NetBox contact id.
 
-        Uses GraphQL (not the REST list) because custom fields like
-        ``netboxContactId`` are reliably returned/filterable there, and the REST
-        list is paginated (default 60) so a naive scan can miss records and
-        cause duplicate-creation attempts.
+        Custom fields such as ``netboxContactId`` are returned when explicitly
+        selected, which the REST list omits; this gives a reliable map for
+        matching without relying on REST-list field availability.
         """
-        query = """
-        query PersonByNetboxContactId($filter: PersonFilter!) {
-          people(filter: $filter, paging: {first: 1}) {
-            edges {
-              node {
-                id
-                name { firstName lastName }
-                emails { primaryEmail }
-                phones { primaryPhoneNumber }
-                netboxContactId
-                netboxContactUrl
-                companyId
+        index: dict[str, dict[str, Any]] = {}
+        after: str | None = None
+        while True:
+            query = """
+            query PeopleByNetbox($after: ConnectionCursor) {
+              people(paging: {first: 100, after: $after}) {
+                edges {
+                  node {
+                    id
+                    name { firstName lastName }
+                    emails { primaryEmail }
+                    phones { primaryPhoneNumber }
+                    netboxContactId
+                    netboxContactUrl
+                    companyId
+                  }
+                }
+                pageInfo { hasNextPage endCursor }
               }
             }
-          }
-        }
-        """
-        try:
-            data = await self._graphql(
-                query, {"filter": {"netboxContactId": {"eq": str(contact_id)}}}
-            )
-        except Exception:
-            return None
-        people = (data.get("data", {}) or {}).get("people", {}) or {}
-        edges = people.get("edges", []) if isinstance(people, dict) else []
-        if edges:
-            return edges[0].get("node")
-        return None
+            """
+            variables = {"after": after} if after else {}
+            try:
+                data = await self._graphql(query, variables)
+            except Exception:
+                break
+            conn = (data.get("data", {}) or {}).get("people", {}) or {}
+            edges = conn.get("edges", []) if isinstance(conn, dict) else []
+            for edge in edges:
+                node = edge.get("node")
+                if node and node.get("netboxContactId") is not None:
+                    index[str(node["netboxContactId"])] = node
+            page_info = conn.get("pageInfo", {}) if isinstance(conn, dict) else {}
+            if not page_info.get("hasNextPage"):
+                break
+            after = page_info.get("endCursor")
+            if not after:
+                break
+        return index
+
+    async def get_person_by_contact_id(self, contact_id: str) -> dict[str, Any] | None:
+        """Find a person by its linked NetBox contact id (GraphQL scan)."""
+        index = await self.get_people_by_netbox_contact_id()
+        return index.get(str(contact_id))
 
     # ------------------------------------------------------------------
     # Metadata API (GraphQL)
