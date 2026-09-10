@@ -169,29 +169,68 @@ class TwentyClient:
     # Custom Fields (on Company)
     # ------------------------------------------------------------------
 
-    async def get_company_object_id(self) -> str | None:
-        """Get the objectMetadata ID for the 'company' object.
+    async def _get_all_objects(self) -> list[dict[str, Any]]:
+        """Page through all objectMetadata entries.
 
-        Note: The metadata API has a 10-item limit on list queries, so we may not
-        find the company object if there are more than 10 objects in the workspace.
-        In that case, returns None and the caller should skip provisioning.
+        The metadata list API enforces a paging limit, so we must walk every
+        page to reliably find objects (e.g. ``netboxresource``) that may not
+        appear on the first page in a workspace with many standard objects.
         """
-        query = """
-        query GetCompanyObject {
-            objects(paging: {first: 100}) {
-                edges {
-                    node {
-                        id
-                        nameSingular
+        objects: list[dict[str, Any]] = []
+        after: str | None = None
+        while True:
+            query = """
+            query GetAllObjects($after: String) {
+                objects(paging: {first: 100, after: $after}) {
+                    edges {
+                        node {
+                            id
+                            nameSingular
+                            namePlural
+                            labelSingular
+                            labelPlural
+                            description
+                            icon
+                            isActive
+                            isSystem
+                            fields(paging: {first: 100}) {
+                                edges {
+                                    node {
+                                        id
+                                        name
+                                        label
+                                        type
+                                        isSystem
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
                     }
                 }
             }
-        }
-        """
-        data = await self._metadata_graphql(query)
-        for edge in data.get("objects", {}).get("edges", []):
-            if edge["node"]["nameSingular"] == "company":
-                return edge["node"]["id"]
+            """
+            variables = {"after": after} if after else {}
+            data = await self._metadata_graphql(query, variables)
+            objs = data.get("objects", {})
+            for edge in objs.get("edges", []):
+                objects.append(edge["node"])
+            page_info = objs.get("pageInfo", {})
+            if not page_info.get("hasNextPage"):
+                break
+            after = page_info.get("endCursor")
+            if not after:
+                break
+        return objects
+
+    async def get_company_object_id(self) -> str | None:
+        """Get the objectMetadata ID for the 'company' object."""
+        for obj in await self._get_all_objects():
+            if obj.get("nameSingular", "").lower() == "company":
+                return obj["id"]
         return None
 
     async def get_company_custom_fields(self) -> list[dict[str, Any]]:
@@ -257,41 +296,9 @@ class TwentyClient:
     # ------------------------------------------------------------------
 
     async def get_object_metadata(self, object_name: str) -> dict[str, Any] | None:
-        """Get object metadata by name via GraphQL."""
-        query = """
-        query GetObjectByName {
-            objects(paging: {first: 100}) {
-                edges {
-                    node {
-                        id
-                        nameSingular
-                        namePlural
-                        labelSingular
-                        labelPlural
-                        description
-                        icon
-                        isActive
-                        isSystem
-                        fields(paging: {first: 100}) {
-                            edges {
-                                node {
-                                    id
-                                    name
-                                    label
-                                    type
-                                    isSystem
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        """
-        data = await self._metadata_graphql(query)
-        for edge in data.get("objects", {}).get("edges", []):
-            if edge["node"]["nameSingular"] == object_name:
-                obj = edge["node"]
+        """Get object metadata by name (case-insensitive), paging all objects."""
+        for obj in await self._get_all_objects():
+            if obj.get("nameSingular", "").lower() == object_name.lower():
                 # Flatten fields for easier access
                 obj["fields"] = [f["node"] for f in obj.get("fields", {}).get("edges", [])]
                 return obj

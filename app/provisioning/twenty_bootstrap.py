@@ -143,27 +143,54 @@ async def _ensure_person_custom_fields(client: TwentyClient) -> None:
 
 async def _ensure_netbox_resource_object(client: TwentyClient) -> None:
     meta = await client.get_object_metadata(NETBOX_RESOURCE_OBJECT_NAME)
-    if meta is None:
-        result = await client.create_object(
-            {
-                "nameSingular": "netboxresource",
-                "namePlural": "netboxresources",
-                "labelSingular": "NetboxResource",
-                "labelPlural": "NetboxResources",
-                "description": "Tracks NetBox infrastructure resources (VRFs, Prefixes)",
-                "icon": "IconServer",
-                "isLabelSyncedWithName": True,
-            }
+    object_id = meta["id"] if meta else None
+    if object_id is None:
+        try:
+            result = await client.create_object(
+                {
+                    "nameSingular": "netboxresource",
+                    "namePlural": "netboxresources",
+                    "labelSingular": "NetboxResource",
+                    "labelPlural": "NetboxResources",
+                    "description": "Tracks NetBox infrastructure resources (VRFs, Prefixes)",
+                    "icon": "IconServer",
+                    "isLabelSyncedWithName": True,
+                }
+            )
+            object_id = result.get("id")
+            if not object_id:
+                logger.error("Failed to create custom object '%s'", NETBOX_RESOURCE_OBJECT_NAME)
+                return
+            logger.info(
+                "Created custom object '%s' (id=%s)",
+                NETBOX_RESOURCE_OBJECT_NAME,
+                object_id,
+            )
+            # Refresh metadata to get the actual field list
+            meta = await client.get_object_metadata(NETBOX_RESOURCE_OBJECT_NAME)
+        except Exception as e:
+            msg = str(e).lower()
+            if any(k in msg for k in ("duplicate", "already exists", "unique constraint")):
+                logger.warning(
+                    "Custom object '%s' already exists; refreshing metadata",
+                    NETBOX_RESOURCE_OBJECT_NAME,
+                )
+                meta = await client.get_object_metadata(NETBOX_RESOURCE_OBJECT_NAME)
+                object_id = meta["id"] if meta else None
+            else:
+                logger.warning(
+                    "Failed to create custom object '%s': %s",
+                    NETBOX_RESOURCE_OBJECT_NAME,
+                    e,
+                )
+                return
+
+    if not object_id:
+        logger.error(
+            "Could not determine id for custom object '%s'",
+            NETBOX_RESOURCE_OBJECT_NAME,
         )
-        object_id = result.get("id")
-        if not object_id:
-            logger.error("Failed to create custom object '%s'", NETBOX_RESOURCE_OBJECT_NAME)
-            return
-        logger.info("Created custom object '%s' (id=%s)", NETBOX_RESOURCE_OBJECT_NAME, object_id)
-        # Refresh metadata to get the actual field list
-        meta = await client.get_object_metadata(NETBOX_RESOURCE_OBJECT_NAME)
-    else:
-        object_id = meta["id"]
+        return
 
     existing_field_names: set[str] = set()
     if meta and "fields" in meta:
