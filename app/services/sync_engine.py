@@ -446,7 +446,7 @@ class SyncEngine:
                     {
                         "netboxTenantId": None,
                         "netboxTenantSlug": None,
-                        "netboxTenantUrl": "",
+                        "netboxTenantUrl": self._links(""),
                     },
                 )
                 logger.info("Cleared NetBox IDs on company %s after tenant deletion", company_id)
@@ -544,7 +544,7 @@ class SyncEngine:
             "prefixcidr": prefix_cidr,
             "netboxid": netbox_id,
             "companyid": tenant_id,
-            "netboxurl": netbox_url,
+            "netboxurl": self._links(netbox_url),
         }
 
         if existing_record:
@@ -615,7 +615,9 @@ class SyncEngine:
                         {
                             "netboxTenantId": str(tenant["id"]),
                             "netboxTenantSlug": tenant["slug"],
-                            "netboxTenantUrl": self._netbox_tenant_url(str(tenant["id"])),
+                            "netboxTenantUrl": self._links(
+                                self._netbox_tenant_url(str(tenant["id"]))
+                            ),
                         },
                     )
                     logger.info("Reconciled company %s <-> tenant %s", cid, tenant["id"])
@@ -655,7 +657,7 @@ class SyncEngine:
                     {
                         "netboxTenantId": str(tenant["id"]),
                         "netboxTenantSlug": tenant["slug"],
-                        "netboxTenantUrl": self._netbox_tenant_url(str(tenant["id"])),
+                        "netboxTenantUrl": self._links(self._netbox_tenant_url(str(tenant["id"]))),
                     },
                 )
                 logger.info("Reconciled tenant %s <-> company %s", tenant["id"], company["id"])
@@ -721,10 +723,16 @@ class SyncEngine:
         prefixes = await self._netbox.get_prefixes()
         for vrf in vrfs:
             if str(vrf.get("id")) not in resource_by_netbox_id:
-                await self._sync_infra_to_netbox_resource("vrf", "object_created", vrf)
+                try:
+                    await self._sync_infra_to_netbox_resource("vrf", "object_created", vrf)
+                except Exception:
+                    logger.exception("Reconcile failed for VRF %s", vrf.get("id"))
         for prefix in prefixes:
             if str(prefix.get("id")) not in resource_by_netbox_id:
-                await self._sync_infra_to_netbox_resource("prefix", "object_created", prefix)
+                try:
+                    await self._sync_infra_to_netbox_resource("prefix", "object_created", prefix)
+                except Exception:
+                    logger.exception("Reconcile failed for prefix %s", prefix.get("id"))
 
     # ------------------------------------------------------------------
     # Worker task entry points (called by saq workers)

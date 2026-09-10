@@ -13,6 +13,7 @@ from app.services.twenty_client import TwentyClient
 def make_resp(status=200, json_data=None, text=""):
     r = MagicMock()
     r.status_code = status
+    r.is_success = status < 400
     r.json.return_value = json_data if json_data is not None else {}
     r.text = text
     r.raise_for_status = MagicMock()
@@ -22,6 +23,7 @@ def make_resp(status=200, json_data=None, text=""):
 def make_error_resp(status=404):
     r = MagicMock()
     r.status_code = status
+    r.is_success = False
     r.json.return_value = {}
     req = MagicMock()
     r.request = req
