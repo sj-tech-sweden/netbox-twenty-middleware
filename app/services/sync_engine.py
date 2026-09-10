@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from app.config import Settings
@@ -40,6 +41,27 @@ class SyncEngine:
         if isinstance(value, dict):
             return value.get("primaryLinkUrl") or ""
         return value or "" if isinstance(value, str) else ""
+
+    def _normalize_phone(self, raw: str | None) -> str | None:
+        """Normalize a phone number to E.164 for Twenty CRM.
+
+        Twenty rejects anything that is not E.164 (e.g. ``0704-677005`` or
+        ``767692700``). Local numbers are assumed to belong to
+        ``phone_country_code`` (default 46 / Sweden) with a leading 0 stripped.
+        """
+        if not raw:
+            return None
+        s = str(raw).strip()
+        if s.startswith("00"):
+            s = "+" + s[2:]
+        has_plus = s.startswith("+")
+        digits = re.sub(r"\D", "", s)
+        if has_plus:
+            return "+" + digits
+        if digits.startswith("0"):
+            digits = digits[1:]
+        cc = (self._settings.phone_country_code or "46").lstrip("+")
+        return f"+{cc}{digits}" if digits else None
 
     # ------------------------------------------------------------------
     # Twenty → NetBox
@@ -326,7 +348,7 @@ class SyncEngine:
         name = contact.get("name", "")
         first, last = self._split_name(name)
         email = contact.get("email", "") or ""
-        phone = contact.get("phone", "") or ""
+        phone = self._normalize_phone(contact.get("phone", "") or "")
 
         # Find existing person (by linkage field)
         existing = None
@@ -512,16 +534,27 @@ class SyncEngine:
         self, model: str, action: str, resource: dict[str, Any]
     ) -> None:
         """Sync VRF/Prefix → Twenty NetboxResource custom object."""
-        resource_type = "VRF" if model == "vrf" else "Prefix"
+        resource_type = "VRF" if model == "vrf" else "PREFIX"
         netbox_id = str(resource.get("id", ""))
         tenant = resource.get("tenant", {})
         tenant_id = str(tenant.get("id", "")) if isinstance(tenant, dict) else str(tenant)
 
         netbox_url = self._netbox_resource_url(model, netbox_id)
 
-        # Find existing record
-        existing = await self._twenty.get_netbox_resources(filters={"netboxid": netbox_id})
-        existing_record = existing[0] if existing else None
+        # Find existing record. Match on BOTH netboxid and resourcetype: NetBox
+        # VRF and Prefix IDs are separate sequences, so the same numeric id can
+        # exist for both a VRF and a Prefix.
+        existing = await self._twenty.get_netbox_resources(
+            filters={"netboxid": netbox_id, "resourcetype": resource_type}
+        )
+        existing_record = next(
+            (
+                r
+                for r in existing
+                if r.get("netboxid") == netbox_id and r.get("resourcetype") == resource_type
+            ),
+            None,
+        )
 
         if action == "deleted":
             if existing_record:
@@ -715,20 +748,26 @@ class SyncEngine:
                 logger.exception("Reconcile failed for person %s", person.get("id"))
 
     async def reconcile_resources(self) -> None:
-        """NetBox → Twenty reconciliation for VRFs/Prefixes (by netbox id)."""
+        """NetBox → Twenty reconciliation for VRFs/Prefixes.
+
+        Keyed by (netboxid, resourcetype) because NetBox VRF and Prefix IDs are
+        separate sequences and can collide.
+        """
         resources = await self._twenty.get_netbox_resources()
-        resource_by_netbox_id = {r.get("netboxid"): r for r in resources if r.get("netboxid")}
+        resource_by_key = {
+            (r.get("netboxid"), r.get("resourcetype")): r for r in resources if r.get("netboxid")
+        }
 
         vrfs = await self._netbox.get_vrfs()
         prefixes = await self._netbox.get_prefixes()
         for vrf in vrfs:
-            if str(vrf.get("id")) not in resource_by_netbox_id:
+            if (str(vrf.get("id")), "VRF") not in resource_by_key:
                 try:
                     await self._sync_infra_to_netbox_resource("vrf", "object_created", vrf)
                 except Exception:
                     logger.exception("Reconcile failed for VRF %s", vrf.get("id"))
         for prefix in prefixes:
-            if str(prefix.get("id")) not in resource_by_netbox_id:
+            if (str(prefix.get("id")), "PREFIX") not in resource_by_key:
                 try:
                     await self._sync_infra_to_netbox_resource("prefix", "object_created", prefix)
                 except Exception:
