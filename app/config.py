@@ -26,10 +26,14 @@ class Settings(BaseSettings):
     # NetBox
     netbox_url: str = "http://netbox:8000"
     netbox_token: str = ""
+    # User-facing NetBox base URL used for deep links stored in Twenty.
+    netbox_public_url: str = ""
 
     # Twenty CRM
     twenty_url: str = "http://twenty:3000"
     twenty_api_key: str = ""
+    # User-facing Twenty base URL used for deep links stored in NetBox.
+    twenty_public_url: str = ""
 
     # Valkey
     valkey_host: str = "valkey"
@@ -49,6 +53,10 @@ class Settings(BaseSettings):
     # Sync source identifier for loop prevention
     sync_source_header: str = "X-Sync-Source"
     sync_source_value: str = "NetboxTwentyMiddleware"
+
+    # Periodic full reconciliation (initial sync + catch-up for missed webhooks).
+    # Set to 0 to disable the periodic scheduler.
+    sync_interval_seconds: int = 300
 
 
 def get_settings() -> Settings:

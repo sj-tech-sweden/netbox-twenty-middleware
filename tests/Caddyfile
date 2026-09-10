@@ -1,0 +1,8 @@
+{
+    admin off
+}
+
+host.docker.internal:8443, localhost:8443 {
+    tls /certs/server.crt /certs/server.key
+    reverse_proxy middleware-api:8000
+}

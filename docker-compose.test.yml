@@ -1,0 +1,266 @@
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # NetBox Stack
+  # ═══════════════════════════════════════════════════════════════
+  postgres-netbox:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: netbox
+      POSTGRES_USER: netbox
+      POSTGRES_PASSWORD: netbox_test_pass
+    healthcheck:
+      test: pg_isready -U netbox -d netbox
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - netbox_postgres_data:/var/lib/postgresql/data
+    networks:
+      - test-network
+
+  valkey-netbox:
+    image: valkey/valkey:9-alpine
+    command: valkey-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - netbox_valkey_data:/data
+    networks:
+      - test-network
+
+  valkey-netbox-cache:
+    image: valkey/valkey:9-alpine
+    command: valkey-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - netbox_valkey_cache_data:/data
+    networks:
+      - test-network
+
+  netbox:
+    image: docker.io/netboxcommunity/netbox:v4.7-5.1.0
+    depends_on:
+      postgres-netbox:
+        condition: service_healthy
+      valkey-netbox:
+        condition: service_healthy
+      valkey-netbox-cache:
+        condition: service_healthy
+    env_file:
+      - tests/netbox.env
+    user: "netbox:root"
+    healthcheck:
+      test: curl -f http://localhost:8080/login/ || exit 1
+      start_period: 90s
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    ports:
+      - "8100:8080"
+    volumes:
+      - netbox_media_files:/opt/netbox/netbox/media
+      - netbox_reports_files:/opt/netbox/netbox/reports
+      - netbox_scripts_files:/opt/netbox/netbox/scripts
+    networks:
+      - test-network
+
+  netbox-worker:
+    image: docker.io/netboxcommunity/netbox:v4.7-5.1.0
+    depends_on:
+      netbox:
+        condition: service_healthy
+    env_file:
+      - tests/netbox.env
+    command:
+      - /opt/netbox/venv/bin/python
+      - /opt/netbox/netbox/manage.py
+      - rqworker
+    healthcheck:
+      test: ps -aux | grep -v grep | grep -q rqworker || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 10s
+      retries: 5
+    networks:
+      - test-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Twenty CRM Stack
+  # ═══════════════════════════════════════════════════════════════
+  postgres-twenty:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: twenty
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: twenty_test_pass
+    healthcheck:
+      test: pg_isready -U postgres -d twenty
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - twenty_postgres_data:/var/lib/postgresql/data
+    networks:
+      - test-network
+
+  redis-twenty:
+    image: redis:7-alpine
+    command: ["--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - test-network
+
+  twenty-server:
+    image: twentycrm/twenty:latest
+    depends_on:
+      postgres-twenty:
+        condition: service_healthy
+      redis-twenty:
+        condition: service_healthy
+    environment:
+      NODE_PORT: 3000
+      PG_DATABASE_URL: postgres://postgres:twenty_test_pass@postgres-twenty:5432/twenty
+      SERVER_URL: http://localhost:3100
+      REDIS_URL: redis://redis-twenty:6379
+      ENCRYPTION_KEY: twenty-test-encryption-key-change-me
+      APP_SECRET: twenty-test-app-secret-change-me
+      DISABLE_DB_MIGRATIONS: "false"
+      DISABLE_CRON_JOBS_REGISTRATION: "false"
+      # Test env only: allow self-signed TLS for outgoing webhooks to the middleware proxy.
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      # Test env only: disable SSRF guard so webhooks can reach internal middleware host.
+      OUTBOUND_HTTP_SAFE_MODE_ENABLED: "false"
+    healthcheck:
+      test: curl --fail http://localhost:3000/healthz
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    ports:
+      - "3100:3000"
+    volumes:
+      - twenty_server_data:/app/packages/twenty-server/.local-storage
+    networks:
+      - test-network
+
+  twenty-worker:
+    image: twentycrm/twenty:latest
+    depends_on:
+      twenty-server:
+        condition: service_healthy
+    command: ["yarn", "worker:prod"]
+    environment:
+      PG_DATABASE_URL: postgres://postgres:twenty_test_pass@postgres-twenty:5432/twenty
+      SERVER_URL: http://localhost:3100
+      REDIS_URL: redis://redis-twenty:6379
+      ENCRYPTION_KEY: twenty-test-encryption-key-change-me
+      APP_SECRET: twenty-test-app-secret-change-me
+      DISABLE_DB_MIGRATIONS: "true"
+      DISABLE_CRON_JOBS_REGISTRATION: "true"
+      # Test env only: allow self-signed TLS for outgoing webhooks to the middleware proxy.
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      # Test env only: disable SSRF guard so webhooks can reach internal middleware host.
+      OUTBOUND_HTTP_SAFE_MODE_ENABLED: "false"
+    networks:
+      - test-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Middleware Stack
+  # ═══════════════════════════════════════════════════════════════
+  valkey:
+    image: valkey/valkey:9-alpine
+    command: valkey-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "6380:6379"
+    volumes:
+      - middleware_valkey_data:/data
+    networks:
+      - test-network
+
+  middleware-api:
+    build: .
+    depends_on:
+      valkey:
+        condition: service_healthy
+      netbox:
+        condition: service_healthy
+      twenty-server:
+        condition: service_healthy
+    env_file:
+      - .env.test
+    environment:
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+    ports:
+      - "8001:8000"
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 2
+    networks:
+      - test-network
+
+  middleware-worker:
+    build: .
+    depends_on:
+      valkey:
+        condition: service_healthy
+      netbox:
+        condition: service_healthy
+      twenty-server:
+        condition: service_healthy
+    env_file:
+      - .env.test
+    environment:
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+    command: python -m app.core.worker
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    networks:
+      - test-network
+
+  middleware-proxy:
+    image: caddy:2-alpine
+    depends_on:
+      - middleware-api
+    volumes:
+      - ./tests/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./tests/certs:/certs:ro
+    ports:
+      - "8443:8443"
+    networks:
+      - test-network
+
+volumes:
+  netbox_postgres_data:
+  netbox_valkey_data:
+  netbox_valkey_cache_data:
+  netbox_media_files:
+  netbox_reports_files:
+  netbox_scripts_files:
+  twenty_postgres_data:
+  twenty_server_data:
+  middleware_valkey_data:
+
+networks:
+  test-network:
+    driver: bridge

@@ -6,7 +6,11 @@ import logging
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 from app.config import Settings
-from app.core.security import verify_netbox_signature, verify_twenty_token
+from app.core.security import (
+    verify_netbox_signature,
+    verify_twenty_signature,
+    verify_twenty_token,
+)
 from app.core.valkey import enqueue_event, get_valkey_client
 
 logger = logging.getLogger("netbox_twenty.webhooks")
@@ -28,26 +32,37 @@ async def handle_twenty_webhook(
     request: Request,
     authorization: str | None = Header(default=None),
     token: str | None = None,
+    x_twenty_webhook_signature: str | None = Header(default=None),
+    x_twenty_webhook_timestamp: str | None = Header(default=None),
 ) -> Response:
     settings = _get_settings()
 
-    # Verify bearer token or query param token
-    auth_token = None
-    if authorization and authorization.startswith("Bearer "):
-        auth_token = authorization[7:]
-    elif token:
-        auth_token = token
+    raw_body = await request.body()
 
-    if not auth_token or not verify_twenty_token(auth_token, settings.twenty_webhook_token):
-        logger.warning("Twenty webhook: invalid or missing token")
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    # Twenty delivers a HMAC-SHA256 signature in X-Twenty-Webhook-Signature
+    # (keyed on the webhook secret). Fall back to a Bearer/query token.
+    signature_ok = verify_twenty_signature(
+        raw_body,
+        x_twenty_webhook_signature,
+        x_twenty_webhook_timestamp,
+        settings.twenty_webhook_token,
+    )
+    if not signature_ok:
+        auth_token = None
+        if authorization and authorization.startswith("Bearer "):
+            auth_token = authorization[7:]
+        elif token:
+            auth_token = token
+        if not auth_token or not verify_twenty_token(auth_token, settings.twenty_webhook_token):
+            logger.warning("Twenty webhook: invalid or missing signature/token")
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
-    body = await request.json()
+    body = json.loads(raw_body)
     event_type = body.get("event", "unknown")
     logger.info("Twenty webhook received: event=%s", event_type)
 
     client = await get_valkey_client(settings.valkey_host, settings.valkey_port)
-    enqueue_event(client, "twenty_events", body)
+    await enqueue_event(client, "twenty_events", body)
 
     return Response(
         content=json.dumps({"status": "accepted", "event": event_type}),
@@ -80,7 +95,7 @@ async def handle_netbox_webhook(
     logger.info("NetBox webhook received: model=%s action=%s", model, action)
 
     client = await get_valkey_client(settings.valkey_host, settings.valkey_port)
-    enqueue_event(client, "netbox_events", body)
+    await enqueue_event(client, "netbox_events", body)
 
     return Response(
         content=json.dumps({"status": "accepted", "model": model, "action": action}),
