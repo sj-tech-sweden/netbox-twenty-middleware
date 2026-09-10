@@ -180,7 +180,7 @@ class TwentyClient:
         after: str | None = None
         while True:
             query = """
-            query GetAllObjects($after: String) {
+            query GetAllObjects($after: ConnectionCursor) {
                 objects(paging: {first: 100, after: $after}) {
                     edges {
                         node {
