@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 from typing import Any
 
 import httpx
@@ -10,6 +12,14 @@ from app.config import Settings
 logger = logging.getLogger("netbox_twenty.twenty_client")
 
 _TRACKING_HEADER = "X-Sync-Source"
+
+# Twenty enforces a rate limit (100 tokens / 60s). When hit we back off and
+# retry instead of letting the whole reconciliation abort.
+_MAX_RATE_LIMIT_RETRIES = 6
+
+
+class TwentyRateLimitError(Exception):
+    """Raised when Twenty keeps rate-limiting after the retry budget is spent."""
 
 
 class TwentyClient:
@@ -37,23 +47,56 @@ class TwentyClient:
     # Generic REST helpers
     # ------------------------------------------------------------------
 
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        """HTTP request with retry/backoff on rate limiting (429) and 5xx."""
+        attempt = 0
+        while True:
+            resp = await self._client.request(method, path, json=json, params=params)
+            status = resp.status_code
+            # Only retry on rate limiting or transient server errors.
+            if status not in (429, 500, 502, 503, 504):
+                return resp
+            if attempt >= _MAX_RATE_LIMIT_RETRIES:
+                return resp
+            attempt += 1
+            retry_after = resp.headers.get("retry-after")
+            if retry_after and retry_after.isdigit():
+                delay = float(retry_after)
+            else:
+                delay = min(2**attempt, 30) + random.uniform(0, 1)
+            logger.warning(
+                "Twenty API rate limited/errored (%s); backing off %.1fs (attempt %d/%d)",
+                status,
+                delay,
+                attempt,
+                _MAX_RATE_LIMIT_RETRIES,
+            )
+            await asyncio.sleep(delay)
+
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        resp = await self._client.get(path, params=params)
+        resp = await self._request("GET", path, params=params)
         await self._check_status(resp)
         return resp.json()
 
     async def _post(self, path: str, json: dict[str, Any]) -> Any:
-        resp = await self._client.post(path, json=json)
+        resp = await self._request("POST", path, json=json)
         await self._check_status(resp)
         return resp.json()
 
     async def _patch(self, path: str, json: dict[str, Any]) -> Any:
-        resp = await self._client.patch(path, json=json)
+        resp = await self._request("PATCH", path, json=json)
         await self._check_status(resp)
         return resp.json()
 
     async def _delete(self, path: str) -> None:
-        resp = await self._client.delete(path)
+        resp = await self._request("DELETE", path)
         await self._check_status(resp)
 
     @staticmethod
@@ -77,7 +120,7 @@ class TwentyClient:
         payload: dict[str, Any] = {"query": query}
         if variables:
             payload["variables"] = variables
-        resp = await self._client.post("/graphql", json=payload)
+        resp = await self._request("POST", "/graphql", json=payload)
         resp.raise_for_status()
         return resp.json()
 
@@ -175,7 +218,7 @@ class TwentyClient:
         payload: dict[str, Any] = {"query": query}
         if variables:
             payload["variables"] = variables
-        resp = await self._client.post("/metadata", json=payload)
+        resp = await self._request("POST", "/metadata", json=payload)
         resp.raise_for_status()
         result = resp.json()
         if "errors" in result:
@@ -435,7 +478,7 @@ class TwentyClient:
 
     async def is_healthy(self) -> bool:
         try:
-            resp = await self._client.get("/health")
+            resp = await self._request("GET", "/health")
             return resp.status_code == 200
         except Exception:
             return False

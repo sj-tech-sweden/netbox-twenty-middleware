@@ -329,7 +329,22 @@ class SyncEngine:
     # NetBox → Twenty (Contact → Person)
     # ------------------------------------------------------------------
 
-    async def _sync_contact_to_person(self, action: str, contact: dict[str, Any]) -> None:
+    @staticmethod
+    def _find_person_by_contact_id(
+        people: list[dict[str, Any]], contact_id: str
+    ) -> dict[str, Any] | None:
+        cid = str(contact_id)
+        for p in people:
+            if str(p.get("netboxContactId")) == cid:
+                return p
+        return None
+
+    async def _sync_contact_to_person(
+        self,
+        action: str,
+        contact: dict[str, Any],
+        people: list[dict[str, Any]] | None = None,
+    ) -> None:
         contact_id = contact.get("id")
         if contact_id is None:
             return
@@ -337,12 +352,16 @@ class SyncEngine:
         nb_person_id = cf.get("twenty_person_id")
 
         if action == "deleted":
-            if nb_person_id:
+            target_id = nb_person_id
+            if not target_id and people is not None:
+                existing = self._find_person_by_contact_id(people, str(contact_id))
+                target_id = existing.get("id") if existing else None
+            if target_id:
                 try:
-                    await self._twenty.delete_person(nb_person_id)
-                    logger.info("Deleted person %s for contact %s", nb_person_id, contact_id)
+                    await self._twenty.delete_person(target_id)
+                    logger.info("Deleted person %s for contact %s", target_id, contact_id)
                 except Exception:
-                    logger.exception("Failed to delete person %s", nb_person_id)
+                    logger.exception("Failed to delete person %s", target_id)
             return
 
         name = contact.get("name", "")
@@ -350,10 +369,19 @@ class SyncEngine:
         email = contact.get("email", "") or ""
         phone = self._normalize_phone(contact.get("phone", "") or "")
 
-        # Find existing person (by linkage field)
+        # Find existing person. Prefer the stored Twenty id, but fall back to
+        # matching by netboxContactId: the stored id can be stale (404) while the
+        # person still exists, and blindly re-creating would violate the unique
+        # netboxContactId constraint.
         existing = None
         if nb_person_id:
             existing = await self._twenty.get_person(nb_person_id)
+        if existing is None and people is not None:
+            existing = self._find_person_by_contact_id(people, str(contact_id))
+        if existing is None:
+            # Webhook path (no pre-fetched people list): still avoid recreating a
+            # person we already synced by looking it up via netboxContactId.
+            existing = await self._twenty.get_person_by_contact_id(str(contact_id))
 
         contact_url = self._netbox_contact_url(str(contact_id))
         person_data: dict[str, Any] = {
@@ -376,8 +404,23 @@ class SyncEngine:
                 or str(existing.get("netboxContactId")) != str(contact_id)
                 or self._links_url(existing.get("netboxContactUrl")) != contact_url
             )
+            # The stored Twenty id may be stale even though the person exists
+            # (matched via netboxContactId). Repair the linkage so we don't 404
+            # on the next run.
+            if str(existing.get("id")) != str(nb_person_id or ""):
+                needs_update = True
             if needs_update:
                 await self._twenty.update_person(existing["id"], person_data)
+                if str(existing.get("id")) != str(nb_person_id or ""):
+                    await self._netbox.update_contact(
+                        int(contact_id),
+                        {
+                            "custom_fields": {
+                                "twenty_person_id": existing["id"],
+                                "twenty_person_url": self._twenty_person_url(existing["id"]),
+                            }
+                        },
+                    )
                 logger.info("Updated person %s for contact %s", existing["id"], contact_id)
         else:
             new_person = await self._twenty.create_person(person_data)
@@ -603,9 +646,15 @@ class SyncEngine:
         was offline. Matching priority: linkage custom field, then natural key
         (email/name for people, slug/name for companies, netbox id for infra).
         """
-        await self.reconcile_companies()
-        await self.reconcile_people()
-        await self.reconcile_resources()
+        for phase in (
+            self.reconcile_companies,
+            self.reconcile_people,
+            self.reconcile_resources,
+        ):
+            try:
+                await phase()
+            except Exception:
+                logger.exception("Reconciliation phase %s failed", phase.__name__)
 
     async def reconcile_companies(self) -> None:
         companies = await self._twenty.get_companies()
@@ -730,7 +779,7 @@ class SyncEngine:
                 name = (contact.get("name") or "").lower()
                 person = people_by_name.get(name) if name else None
             try:
-                await self._sync_contact_to_person("object_updated", contact)
+                await self._sync_contact_to_person("object_updated", contact, people)
             except Exception:
                 logger.exception("Reconcile failed for contact %s", cid)
             if person:
