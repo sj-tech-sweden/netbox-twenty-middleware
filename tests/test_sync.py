@@ -274,7 +274,7 @@ class TestNetboxToTwenty:
             "id": "comp-1",
             "netboxTenantId": "10",
             "netboxTenantSlug": "acme-corp",
-            "netboxTenantUrl": "http://netbox:8000/tenancy/tenants/10/",
+            "netboxTenantUrl": {"primaryLinkUrl": "http://netbox:8000/tenancy/tenants/10/"},
         }
 
         await eng._sync_tenant_to_company("created", tenant)
@@ -341,7 +341,7 @@ class TestNetboxToTwenty:
         twenty.update_company.assert_called_once()
         args = twenty.update_company.call_args[0]
         assert args[1]["netboxTenantId"] is None
-        assert args[1]["netboxTenantUrl"] == ""
+        assert args[1]["netboxTenantUrl"] == {"primaryLinkUrl": ""}
 
     @pytest.mark.anyio
     async def test_tenant_deleted_noop_without_company_id(self, engine):
@@ -379,7 +379,7 @@ class TestInfraSync:
         assert call_args["name"] == "Mgmt VRF"
         assert call_args["resourcetype"] == "VRF"
         assert call_args["netboxid"] == "5"
-        assert call_args["netboxurl"] == "http://netbox:8000/ipam/vrfs/5/"
+        assert call_args["netboxurl"] == {"primaryLinkUrl": "http://netbox:8000/ipam/vrfs/5/"}
 
     @pytest.mark.anyio
     async def test_prefix_synced_to_netbox_resource(self, engine):
@@ -394,7 +394,7 @@ class TestInfraSync:
         assert call_args["name"] == "10.0.0.0/8"
         assert call_args["resourcetype"] == "Prefix"
         assert call_args["prefixcidr"] == "10.0.0.0/8"
-        assert call_args["netboxurl"] == "http://netbox:8000/ipam/prefixes/20/"
+        assert call_args["netboxurl"] == {"primaryLinkUrl": "http://netbox:8000/ipam/prefixes/20/"}
 
     @pytest.mark.anyio
     async def test_vrf_update_patches_existing_resource(self, engine):
@@ -413,7 +413,7 @@ class TestInfraSync:
                 "prefixcidr": "",
                 "netboxid": "5",
                 "companyid": "10",
-                "netboxurl": "http://netbox:8000/ipam/vrfs/5/",
+                "netboxurl": {"primaryLinkUrl": "http://netbox:8000/ipam/vrfs/5/"},
             },
         )
 
@@ -428,7 +428,7 @@ class TestInfraSync:
                 "resourcetype": "VRF",
                 "prefixcidr": "",
                 "netboxid": "5",
-                "netboxurl": "http://netbox:8000/ipam/vrfs/5/",
+                "netboxurl": {"primaryLinkUrl": "http://netbox:8000/ipam/vrfs/5/"},
             }
         ]
 
