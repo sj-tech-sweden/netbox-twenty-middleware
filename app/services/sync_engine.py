@@ -4,6 +4,8 @@ import logging
 import re
 from typing import Any
 
+import httpx
+
 from app.config import Settings
 from app.core.utils import slugify
 from app.services.netbox_client import NetBoxClient
@@ -423,19 +425,48 @@ class SyncEngine:
                     )
                 logger.info("Updated person %s for contact %s", existing["id"], contact_id)
         else:
-            new_person = await self._twenty.create_person(person_data)
-            new_person_id = new_person.get("id")
-            await self._netbox.update_contact(
-                int(contact_id),
-                {
-                    "custom_fields": {
-                        "twenty_person_id": new_person_id,
-                        "twenty_person_url": self._twenty_person_url(new_person_id),
-                    }
-                },
-            )
-            logger.info("Created person %s for contact %s", new_person_id, contact_id)
-            existing = new_person
+            try:
+                new_person = await self._twenty.create_person(person_data)
+            except httpx.HTTPStatusError as exc:
+                # A person carrying this netboxContactId already exists in Twenty
+                # (e.g. created by an earlier run before linkage was written back).
+                # Reuse it instead of failing on the unique constraint.
+                body = (exc.response.text or "").lower()
+                if exc.response.status_code == 400 and "duplicate" in body:
+                    dup = await self._twenty.get_person_by_contact_id(str(contact_id))
+                    if dup is None:
+                        raise
+                    await self._twenty.update_person(dup["id"], person_data)
+                    await self._netbox.update_contact(
+                        int(contact_id),
+                        {
+                            "custom_fields": {
+                                "twenty_person_id": dup["id"],
+                                "twenty_person_url": self._twenty_person_url(dup["id"]),
+                            }
+                        },
+                    )
+                    logger.info(
+                        "Reused existing person %s for contact %s (duplicate constraint)",
+                        dup["id"],
+                        contact_id,
+                    )
+                    existing = dup
+                else:
+                    raise
+            else:
+                new_person_id = new_person.get("id")
+                await self._netbox.update_contact(
+                    int(contact_id),
+                    {
+                        "custom_fields": {
+                            "twenty_person_id": new_person_id,
+                            "twenty_person_url": self._twenty_person_url(new_person_id),
+                        }
+                    },
+                )
+                logger.info("Created person %s for contact %s", new_person_id, contact_id)
+                existing = new_person
 
         # Link the person to its company (via the contact's NetBox tenant)
         await self._link_person_to_company(existing.get("id"), int(contact_id))

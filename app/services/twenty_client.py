@@ -141,11 +141,7 @@ class TwentyClient:
         return None
 
     async def get_companies(self, **kwargs: Any) -> list[dict[str, Any]]:
-        result = await self._get("/rest/companies", params=kwargs)
-        data = result.get("data")
-        if isinstance(data, dict):
-            return data.get("companies", [])
-        return []
+        return await self._get_all_rest("/rest/companies", "companies", kwargs)
 
     async def create_company(self, payload: dict[str, Any]) -> dict[str, Any]:
         result = await self._post("/rest/companies", json=payload)
@@ -184,11 +180,34 @@ class TwentyClient:
         return None
 
     async def get_people(self, **kwargs: Any) -> list[dict[str, Any]]:
-        result = await self._get("/rest/people", params=kwargs)
-        data = result.get("data")
-        if isinstance(data, dict):
-            return data.get("people", [])
-        return []
+        return await self._get_all_rest("/rest/people", "people", kwargs)
+
+    async def _get_all_rest(
+        self, path: str, key: str, extra_params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        """Page through a REST list endpoint (cursor pagination, limit 200)."""
+        items: list[dict[str, Any]] = []
+        params = dict(extra_params or {})
+        params["limit"] = 200
+        after: str | None = None
+        while True:
+            if after is not None:
+                params["startingAfter"] = after
+            result = await self._get(path, params=params)
+            data = result.get("data") or {}
+            page_items = data.get(key, []) if isinstance(data, dict) else []
+            if not isinstance(page_items, list):
+                page_items = []
+            items.extend(page_items)
+            if not page_items:
+                break
+            page_info = result.get("pageInfo") or {}
+            if not page_info.get("hasNextPage"):
+                break
+            after = page_info.get("endCursor")
+            if not after:
+                break
+        return items
 
     async def create_person(self, payload: dict[str, Any]) -> dict[str, Any]:
         result = await self._post("/rest/people", json=payload)
@@ -204,10 +223,40 @@ class TwentyClient:
         await self._delete(f"/rest/people/{person_id}")
 
     async def get_person_by_contact_id(self, contact_id: str) -> dict[str, Any] | None:
-        people = await self.get_people()
-        for person in people:
-            if str(person.get("netboxContactId")) == str(contact_id):
-                return person
+        """Find a person by its linked NetBox contact id.
+
+        Uses GraphQL (not the REST list) because custom fields like
+        ``netboxContactId`` are reliably returned/filterable there, and the REST
+        list is paginated (default 60) so a naive scan can miss records and
+        cause duplicate-creation attempts.
+        """
+        query = """
+        query PersonByNetboxContactId($filter: PersonFilter!) {
+          people(filter: $filter, paging: {first: 1}) {
+            edges {
+              node {
+                id
+                name { firstName lastName }
+                emails { primaryEmail }
+                phones { primaryPhoneNumber }
+                netboxContactId
+                netboxContactUrl
+                companyId
+              }
+            }
+          }
+        }
+        """
+        try:
+            data = await self._graphql(
+                query, {"filter": {"netboxContactId": {"eq": str(contact_id)}}}
+            )
+        except Exception:
+            return None
+        people = (data.get("data", {}) or {}).get("people", {}) or {}
+        edges = people.get("edges", []) if isinstance(people, dict) else []
+        if edges:
+            return edges[0].get("node")
         return None
 
     # ------------------------------------------------------------------
@@ -451,12 +500,7 @@ class TwentyClient:
         self,
         filters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        params = filters or {}
-        result = await self._get("/rest/netboxresources", params=params)
-        data = result.get("data")
-        if isinstance(data, dict):
-            return data.get("netboxresources", [])
-        return []
+        return await self._get_all_rest("/rest/netboxresources", "netboxresources", filters or {})
 
     async def create_netbox_resource(self, payload: dict[str, Any]) -> dict[str, Any]:
         result = await self._post("/rest/netboxresources", json=payload)
