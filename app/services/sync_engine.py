@@ -49,12 +49,7 @@ class SyncEngine:
         # Twenty's webhook envelope uses "eventName" and nests the record
         # under "record". Older/alternative shapes use "event"/"data"/"payload".
         event_type = payload.get("eventName") or payload.get("event", "")
-        data = (
-            payload.get("record")
-            or payload.get("data")
-            or payload.get("payload")
-            or payload
-        )
+        data = payload.get("record") or payload.get("data") or payload.get("payload") or payload
 
         match event_type:
             case "company.created" | "company.updated":
@@ -295,9 +290,7 @@ class SyncEngine:
         existing = await self._netbox.get_contact_assignments(contact_id, "tenancy.tenant")
         if any(str(a.get("object_id")) == str(netbox_tenant_id) for a in existing):
             return
-        await self._netbox.create_contact_assignment(
-            contact_id, "tenancy.tenant", netbox_tenant_id
-        )
+        await self._netbox.create_contact_assignment(contact_id, "tenancy.tenant", netbox_tenant_id)
         logger.info("Linked contact %s to tenant %s", contact_id, netbox_tenant_id)
 
     async def _delete_contact_for_person(self, person: dict[str, Any]) -> None:
@@ -566,7 +559,6 @@ class SyncEngine:
             await self._twenty.create_netbox_resource(record_data)
             logger.info("Created NetboxResource for %s %s", resource_type, netbox_id)
 
-
     # ------------------------------------------------------------------
     # Periodic / initial reconciliation (duplicate detection)
     # ------------------------------------------------------------------
@@ -606,10 +598,9 @@ class SyncEngine:
                 )
             if tenant:
                 matched_tenants.add(tenant["id"])
-                if (
-                    str(tenant.get("custom_fields", {}).get("twenty_company_id")) != cid
-                    or not company.get("netboxTenantId")
-                ):
+                if str(
+                    tenant.get("custom_fields", {}).get("twenty_company_id")
+                ) != cid or not company.get("netboxTenantId"):
                     await self._netbox.update_tenant(
                         tenant["id"],
                         {

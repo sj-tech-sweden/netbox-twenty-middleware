@@ -36,7 +36,7 @@ def verify_twenty_signature(
     try:
         # Twenty sends the timestamp in milliseconds (Date.now()).
         age = abs(int(__import__("time").time() * 1000) - int(timestamp))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return False
     if age > max_age_seconds * 1000:
         return False

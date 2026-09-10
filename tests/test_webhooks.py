@@ -75,7 +75,8 @@ class TestTwentyWebhook:
     async def test_accepts_valid_bearer(self, mock_settings):
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
             mock_client = MagicMock()
-            mock_client.incr.return_value = 1
+            mock_client.incr = AsyncMock(return_value=1)
+            mock_client.rpush = AsyncMock()
             mock_vk.return_value = mock_client
 
             transport = ASGITransport(app=app)
@@ -102,7 +103,8 @@ class TestTwentyWebhook:
     async def test_accepts_query_token(self, mock_settings):
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
             mock_client = MagicMock()
-            mock_client.incr.return_value = 1
+            mock_client.incr = AsyncMock(return_value=1)
+            mock_client.rpush = AsyncMock()
             mock_vk.return_value = mock_client
 
             transport = ASGITransport(app=app)
@@ -117,7 +119,8 @@ class TestTwentyWebhook:
     async def test_bearer_takes_precedence_over_query(self, mock_settings):
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
             mock_client = MagicMock()
-            mock_client.incr.return_value = 1
+            mock_client.incr = AsyncMock(return_value=1)
+            mock_client.rpush = AsyncMock()
             mock_vk.return_value = mock_client
 
             transport = ASGITransport(app=app)
@@ -144,7 +147,8 @@ class TestTwentyWebhook:
     async def test_returns_event_in_response(self, mock_settings):
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
             mock_client = MagicMock()
-            mock_client.incr.return_value = 1
+            mock_client.incr = AsyncMock(return_value=1)
+            mock_client.rpush = AsyncMock()
             mock_vk.return_value = mock_client
 
             transport = ASGITransport(app=app)
@@ -179,7 +183,8 @@ class TestNetboxWebhook:
 
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
             mock_client = MagicMock()
-            mock_client.incr.return_value = 1
+            mock_client.incr = AsyncMock(return_value=1)
+            mock_client.rpush = AsyncMock()
             mock_vk.return_value = mock_client
 
             transport = ASGITransport(app=app)
@@ -210,7 +215,8 @@ class TestNetboxWebhook:
 
         with patch("app.api.v1.webhooks.get_valkey_client") as mock_vk:
             mock_client = MagicMock()
-            mock_client.incr.return_value = 1
+            mock_client.incr = AsyncMock(return_value=1)
+            mock_client.rpush = AsyncMock()
             mock_vk.return_value = mock_client
 
             transport = ASGITransport(app=app)
