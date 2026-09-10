@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netbox-twenty-middleware
+  namespace: netbox-twenty-middleware
+  labels:
+    app: netbox-twenty-middleware
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: netbox-twenty-middleware
+  template:
+    metadata:
+      labels:
+        app: netbox-twenty-middleware
+    spec:
+      containers:
+      - name: netbox-twenty-middleware
+        image: ghcr.io/sj-tech-sweden/netbox-twenty-middleware:latest
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "4"
+          requests:
+            memory: "512Mi"
+            cpu: "1"
+        readinessProbe:
+          httpGet:
+            path: /v1/healthz
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /v1/healthz
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 20
+        envFrom:
+        - secretRef:
+            name: netbox-twenty-middleware-secret

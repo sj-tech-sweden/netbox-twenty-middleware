@@ -50,3 +50,39 @@ class TestVerifyTwentyToken:
 
     def test_case_sensitive(self):
         assert verify_twenty_token("ABC", "abc") is False
+
+
+class TestVerifyTwentySignature:
+    def test_valid_signature(self):
+        from app.core.security import verify_twenty_signature
+
+        payload = b'{"event":"company.created"}'
+        secret = "twenty-secret"
+        import time
+
+        ts = str(int(time.time() * 1000))
+        digest = hmac.new(secret.encode(), f"{ts}:".encode() + payload, hashlib.sha256).hexdigest()
+        assert verify_twenty_signature(payload, digest, ts, secret) is True
+
+    def test_invalid_signature(self):
+        from app.core.security import verify_twenty_signature
+
+        payload = b"data"
+        assert verify_twenty_signature(payload, "badsig", "123", "secret") is False
+
+    def test_expired_timestamp(self):
+        import time
+
+        from app.core.security import verify_twenty_signature
+
+        payload = b"data"
+        secret = "secret"
+        ts = str(int(time.time() * 1000) - 10 * 60 * 1000)  # 10 minutes ago
+        digest = hmac.new(secret.encode(), f"{ts}:".encode() + payload, hashlib.sha256).hexdigest()
+        assert verify_twenty_signature(payload, digest, ts, secret, max_age_seconds=300) is False
+
+    def test_missing_signature_or_timestamp(self):
+        from app.core.security import verify_twenty_signature
+
+        assert verify_twenty_signature(b"x", None, "123", "s") is False
+        assert verify_twenty_signature(b"x", "sig", None, "s") is False

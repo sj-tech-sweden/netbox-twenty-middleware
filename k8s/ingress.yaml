@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: netbox-twenty-middleware-ingress
+  namespace: netbox-twenty-middleware
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  rules:
+  - host: netbox-twenty-middleware.k8s.sj-tech.se
+    http:
+      paths:
+      - backend:
+          service:
+            name: netbox-twenty-middleware-svc
+            port:
+              number: 8000
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - netbox-twenty-middleware.k8s.sj-tech.se
+    secretName: netbox-twenty-middleware-k8s-sj-tech-se-tls

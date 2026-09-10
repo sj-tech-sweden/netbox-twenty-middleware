@@ -35,6 +35,12 @@ def engine(settings):
         # NetBox client async methods
         nb.get_tenant = AsyncMock(return_value=None)
         nb.get_tenants = AsyncMock(return_value=[])
+        nb.get_contacts = AsyncMock(return_value=[])
+        nb.get_contact_by_person_id = AsyncMock(return_value=None)
+        nb.create_contact = AsyncMock(return_value={"id": 1})
+        nb.update_contact = AsyncMock()
+        nb.get_vrfs = AsyncMock(return_value=[])
+        nb.get_prefixes = AsyncMock(return_value=[])
         nb.create_tenant = AsyncMock(return_value={"id": 1})
         nb.update_tenant = AsyncMock()
         nb.delete_tenant = AsyncMock()
@@ -49,6 +55,7 @@ def engine(settings):
         # Twenty client async methods
         twenty.get_company = AsyncMock(return_value=None)
         twenty.get_companies = AsyncMock(return_value=[])
+        twenty.get_people = AsyncMock(return_value=[])
         twenty.create_company = AsyncMock(return_value={"id": "new"})
         twenty.update_company = AsyncMock()
         twenty.get_company_custom_fields = AsyncMock(return_value=[])
@@ -101,10 +108,9 @@ class TestTwentyToNetbox:
         twenty.update_company.assert_called_once()
         update_args = twenty.update_company.call_args[0]
         assert update_args[0] == "comp-1"
-        assert (
-            update_args[1]["customFields"]["netboxTenantUrl"]
-            == "http://netbox:8000/tenancy/tenants/42/"
-        )
+        assert update_args[1]["netboxTenantUrl"] == {
+            "primaryLinkUrl": "http://netbox:8000/tenancy/tenants/42/"
+        }
 
     @pytest.mark.anyio
     async def test_company_created_with_existing_tenant_id_updates(self, engine):
@@ -120,7 +126,7 @@ class TestTwentyToNetbox:
             {
                 "id": "comp-1",
                 "name": "New Name",
-                "customFields": {"netbox_tenantId": "42"},
+                "netboxTenantId": "42",
             }
         )
 
@@ -148,7 +154,7 @@ class TestTwentyToNetbox:
             {
                 "id": "comp-1",
                 "name": "New Name",
-                "customFields": {"netbox_tenantId": "42"},
+                "netboxTenantId": "42",
             }
         )
 
@@ -196,7 +202,7 @@ class TestTwentyToNetbox:
         eng, nb, twenty = engine
         company = {
             "id": "comp-1",
-            "customFields": {"netbox_tenantId": "42"},
+            "netboxTenantId": "42",
         }
         await eng._delete_tenant_for_company(company)
         nb.delete_tenant.assert_called_once_with(42)
@@ -204,7 +210,7 @@ class TestTwentyToNetbox:
     @pytest.mark.anyio
     async def test_company_deleted_noop_without_tenant_id(self, engine):
         eng, nb, twenty = engine
-        await eng._delete_tenant_for_company({"id": "comp-1", "customFields": {}})
+        await eng._delete_tenant_for_company({"id": "comp-1"})
         nb.delete_tenant.assert_not_called()
 
     @pytest.mark.anyio
@@ -240,20 +246,20 @@ class TestNetboxToTwenty:
             "id": 10,
             "name": "Acme Corp",
             "slug": "acme-corp",
-            "custom_fields": {"twenty_company_id": None},
+            "custom_fields": {"twenty_company_id": "comp-1"},
         }
         twenty.get_companies.return_value = [{"id": "comp-1"}]
-        twenty.get_company.return_value = {"id": "comp-1", "customFields": {}}
+        twenty.get_company.return_value = {"id": "comp-1"}
 
         await eng._sync_tenant_to_company("created", tenant)
 
         twenty.update_company.assert_called_once()
         args = twenty.update_company.call_args[0]
         assert args[0] == "comp-1"
-        assert args[1]["customFields"]["netbox_tenantId"] == "10"
-        assert (
-            args[1]["customFields"]["netboxTenantUrl"] == "http://netbox:8000/tenancy/tenants/10/"
-        )
+        assert args[1]["netboxTenantId"] == "10"
+        assert args[1]["netboxTenantUrl"] == {
+            "primaryLinkUrl": "http://netbox:8000/tenancy/tenants/10/"
+        }
 
     @pytest.mark.anyio
     async def test_tenant_created_skips_if_already_synced(self, engine):
@@ -266,11 +272,9 @@ class TestNetboxToTwenty:
         }
         twenty.get_company.return_value = {
             "id": "comp-1",
-            "customFields": {
-                "netbox_tenantId": "10",
-                "netbox_tenantSlug": "acme-corp",
-                "netboxTenantUrl": "http://netbox:8000/tenancy/tenants/10/",
-            },
+            "netboxTenantId": "10",
+            "netboxTenantSlug": "acme-corp",
+            "netboxTenantUrl": "http://netbox:8000/tenancy/tenants/10/",
         }
 
         await eng._sync_tenant_to_company("created", tenant)
@@ -288,16 +292,17 @@ class TestNetboxToTwenty:
         }
         twenty.get_company.return_value = {
             "id": "comp-1",
-            "customFields": {"netbox_tenantId": "10", "netboxTenantUrl": "old-url"},
+            "netboxTenantId": "10",
+            "netboxTenantUrl": "old-url",
         }
 
         await eng._sync_tenant_to_company("created", tenant)
 
         twenty.update_company.assert_called_once()
         args = twenty.update_company.call_args[0]
-        assert (
-            args[1]["customFields"]["netboxTenantUrl"] == "http://netbox:8000/tenancy/tenants/10/"
-        )
+        assert args[1]["netboxTenantUrl"] == {
+            "primaryLinkUrl": "http://netbox:8000/tenancy/tenants/10/"
+        }
 
     @pytest.mark.anyio
     async def test_tenant_created_creates_company_when_not_found(self, engine):
@@ -335,8 +340,8 @@ class TestNetboxToTwenty:
 
         twenty.update_company.assert_called_once()
         args = twenty.update_company.call_args[0]
-        assert args[1]["customFields"]["netbox_tenantId"] is None
-        assert args[1]["customFields"]["netboxTenantUrl"] is None
+        assert args[1]["netboxTenantId"] is None
+        assert args[1]["netboxTenantUrl"] == ""
 
     @pytest.mark.anyio
     async def test_tenant_deleted_noop_without_company_id(self, engine):
@@ -372,9 +377,9 @@ class TestInfraSync:
         twenty.create_netbox_resource.assert_called_once()
         call_args = twenty.create_netbox_resource.call_args[0][0]
         assert call_args["name"] == "Mgmt VRF"
-        assert call_args["type"] == "VRF"
-        assert call_args["netboxId"] == "5"
-        assert call_args["netboxUrl"] == "http://netbox:8000/ipam/vrfs/5/"
+        assert call_args["resourcetype"] == "VRF"
+        assert call_args["netboxid"] == "5"
+        assert call_args["netboxurl"] == "http://netbox:8000/ipam/vrfs/5/"
 
     @pytest.mark.anyio
     async def test_prefix_synced_to_netbox_resource(self, engine):
@@ -387,9 +392,9 @@ class TestInfraSync:
         twenty.create_netbox_resource.assert_called_once()
         call_args = twenty.create_netbox_resource.call_args[0][0]
         assert call_args["name"] == "10.0.0.0/8"
-        assert call_args["type"] == "Prefix"
-        assert call_args["prefixCidr"] == "10.0.0.0/8"
-        assert call_args["netboxUrl"] == "http://netbox:8000/ipam/prefixes/20/"
+        assert call_args["resourcetype"] == "Prefix"
+        assert call_args["prefixcidr"] == "10.0.0.0/8"
+        assert call_args["netboxurl"] == "http://netbox:8000/ipam/prefixes/20/"
 
     @pytest.mark.anyio
     async def test_vrf_update_patches_existing_resource(self, engine):
@@ -404,11 +409,11 @@ class TestInfraSync:
             "res-1",
             {
                 "name": "Updated VRF",
-                "type": "VRF",
-                "prefixCidr": "",
-                "netboxId": "5",
-                "companyId": "10",
-                "netboxUrl": "http://netbox:8000/ipam/vrfs/5/",
+                "resourcetype": "VRF",
+                "prefixcidr": "",
+                "netboxid": "5",
+                "companyid": "10",
+                "netboxurl": "http://netbox:8000/ipam/vrfs/5/",
             },
         )
 
@@ -420,10 +425,10 @@ class TestInfraSync:
             {
                 "id": "res-1",
                 "name": "Mgmt VRF",
-                "type": "VRF",
-                "prefixCidr": "",
-                "netboxId": "5",
-                "netboxUrl": "http://netbox:8000/ipam/vrfs/5/",
+                "resourcetype": "VRF",
+                "prefixcidr": "",
+                "netboxid": "5",
+                "netboxurl": "http://netbox:8000/ipam/vrfs/5/",
             }
         ]
 
@@ -438,7 +443,7 @@ class TestInfraSync:
 
         await eng._sync_infra_to_netbox_resource("vrf", "deleted", {"id": 5})
 
-        twenty._delete.assert_called_once_with("/rest/netboxResources/res-1")
+        twenty._delete.assert_called_once_with("/rest/netboxresources/res-1")
 
     @pytest.mark.anyio
     async def test_vrf_delete_noop_when_no_record(self, engine):
@@ -459,7 +464,7 @@ class TestInfraSync:
 
         call_args = twenty.create_netbox_resource.call_args[0][0]
         assert call_args["name"] == "192.168.0.0/16"
-        assert call_args["prefixCidr"] == "192.168.0.0/16"
+        assert call_args["prefixcidr"] == "192.168.0.0/16"
 
     @pytest.mark.anyio
     async def test_resource_falls_back_to_generated_name(self, engine):
@@ -481,7 +486,7 @@ class TestInfraSync:
         await eng._sync_infra_to_netbox_resource("vrf", "created", vrf)
 
         call_args = twenty.create_netbox_resource.call_args[0][0]
-        assert call_args["companyId"] == "42"
+        assert call_args["companyid"] == "42"
 
     @pytest.mark.anyio
     async def test_tenant_id_extracted_from_string(self, engine):
@@ -492,7 +497,7 @@ class TestInfraSync:
         await eng._sync_infra_to_netbox_resource("vrf", "created", vrf)
 
         call_args = twenty.create_netbox_resource.call_args[0][0]
-        assert call_args["companyId"] == "42"
+        assert call_args["companyid"] == "42"
 
 
 # ------------------------------------------------------------------
@@ -530,7 +535,7 @@ class TestEventRouting:
         await eng.handle_twenty_event(
             {
                 "event": "company.deleted",
-                "data": {"id": "c1", "customFields": {"netbox_tenantId": "5"}},
+                "data": {"id": "c1", "netboxTenantId": "5"},
             }
         )
         nb.delete_tenant.assert_called_once_with(5)
@@ -547,7 +552,7 @@ class TestEventRouting:
                 "data": {"id": 1, "name": "T", "slug": "t", "custom_fields": {}},
             }
         )
-        twenty.update_company.assert_called_once()
+        twenty.create_company.assert_called_once()
 
     @pytest.mark.anyio
     async def test_netbox_vrf_routes_correctly(self, engine):
@@ -561,3 +566,91 @@ class TestEventRouting:
             }
         )
         twenty.create_netbox_resource.assert_called_once()
+
+
+class TestReconcile:
+    @pytest.mark.anyio
+    async def test_reconcile_all_empty(self, engine):
+        eng, nb, twenty = engine
+        await eng.reconcile_all()
+        nb.create_tenant.assert_not_called()
+        twenty.create_company.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_reconcile_companies_links_existing(self, engine):
+        eng, nb, twenty = engine
+        tenant = {
+            "id": 10,
+            "name": "T",
+            "slug": "t",
+            "custom_fields": {"twenty_company_id": "c1"},
+        }
+        company = {
+            "id": "c1",
+            "name": "T",
+            "netboxTenantId": "10",
+            "netboxTenantSlug": "t",
+        }
+        nb.get_tenants.return_value = [tenant]
+        twenty.get_companies.return_value = [company]
+        twenty.get_company.return_value = company
+        await eng.reconcile_companies()
+        # Found matching tenant already linked; idempotent
+        nb.create_tenant.assert_not_called()
+        twenty.create_company.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_reconcile_companies_creates_for_unlinked_tenant(self, engine):
+        eng, nb, twenty = engine
+        nb.get_tenants.return_value = [{"id": 30, "name": "Z", "slug": "z", "custom_fields": {}}]
+        twenty.get_companies.return_value = []
+        twenty.get_company.return_value = None
+        await eng.reconcile_companies()
+        twenty.create_company.assert_awaited()
+
+    @pytest.mark.anyio
+    async def test_reconcile_people_creates_for_unlinked_person(self, engine):
+        eng, nb, twenty = engine
+        twenty.get_people.return_value = [
+            {
+                "id": "p1",
+                "name": {"firstName": "A", "lastName": "B"},
+                "emails": {"primaryEmail": "a@b.com"},
+                "phones": {"primaryPhoneNumber": "+460000"},
+                "netboxContactId": "",
+                "netboxContactUrl": "",
+                "linkedinUrl": "",
+                "linkedinPhantomUrl": "",
+            }
+        ]
+        nb.get_contacts.return_value = []
+        await eng.reconcile_people()
+        nb.create_contact.assert_awaited()
+
+    @pytest.mark.anyio
+    async def test_reconcile_resources_creates_for_vrf(self, engine):
+        eng, nb, twenty = engine
+        nb.get_vrfs.return_value = [{"id": 5, "name": "V", "tenant": {"id": 10}, "rd": "65000:1"}]
+        nb.get_prefixes.return_value = []
+        twenty.get_netbox_resources.return_value = []
+        await eng.reconcile_resources()
+        twenty.create_netbox_resource.assert_awaited()
+
+    @pytest.mark.anyio
+    async def test_reconcile_resources_creates_for_prefix(self, engine):
+        eng, nb, twenty = engine
+        nb.get_vrfs.return_value = []
+        nb.get_prefixes.return_value = [
+            {
+                "id": 7,
+                "prefix": "10.0.0.0/24",
+                "status": {"value": "active"},
+                "tenant": {"id": 10},
+                "vrf": None,
+                "description": "",
+                "custom_fields": {},
+            }
+        ]
+        twenty.get_netbox_resources.return_value = []
+        await eng.reconcile_resources()
+        twenty.create_netbox_resource.assert_awaited()

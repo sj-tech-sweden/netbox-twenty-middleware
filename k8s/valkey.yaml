@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netbox-twenty-middleware-valkey
+  namespace: netbox-twenty-middleware
+  labels:
+    app: netbox-twenty-middleware-valkey
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: netbox-twenty-middleware-valkey
+  template:
+    metadata:
+      labels:
+        app: netbox-twenty-middleware-valkey
+    spec:
+      containers:
+      - name: valkey
+        image: valkey/valkey:9-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        volumeMounts:
+        - name: valkey-data
+          mountPath: /data
+      volumes:
+      - name: valkey-data
+        persistentVolumeClaim:
+          claimName: netbox-twenty-middleware-valkey-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: netbox-twenty-middleware-valkey
+  namespace: netbox-twenty-middleware
+  labels:
+    app: netbox-twenty-middleware-valkey
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  selector:
+    app: netbox-twenty-middleware-valkey
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: netbox-twenty-middleware-valkey-data
+  namespace: netbox-twenty-middleware
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn

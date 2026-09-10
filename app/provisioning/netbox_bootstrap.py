@@ -94,23 +94,6 @@ async def _create_fields(
         else:
             logger.debug("Custom field '%s' already exists on %s", field_def["name"], content_type)
 
-    for field_def in fields_to_create:
-        if field_def["name"] not in existing_names:
-            await client.create_custom_field(
-                {
-                    "name": field_def["name"],
-                    "object_types": [content_type],
-                    "type": field_def["type"],
-                    "label": field_def["label"],
-                    "description": field_def["description"],
-                    "required": False,
-                    "filter_logic": field_def.get("filter_logic", "disabled"),
-                }
-            )
-            logger.info("Created custom field '%s' on %s", field_def["name"], content_type)
-        else:
-            logger.debug("Custom field '%s' already exists on %s", field_def["name"], content_type)
-
 
 async def _ensure_event_rule(settings: Settings, client: NetBoxClient) -> None:
     webhook_url = f"{settings.public_base_url.rstrip('/')}/api/v1/webhooks/netbox"

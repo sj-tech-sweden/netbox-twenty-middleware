@@ -1,0 +1,33 @@
+# The middleware runs two processes: the HTTP API (see deployment.yaml) and a
+# background worker that drains the Valkey queue. This Deployment runs the worker.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netbox-twenty-middleware-worker
+  namespace: netbox-twenty-middleware
+  labels:
+    app: netbox-twenty-middleware-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: netbox-twenty-middleware-worker
+  template:
+    metadata:
+      labels:
+        app: netbox-twenty-middleware-worker
+    spec:
+      containers:
+      - name: netbox-twenty-middleware-worker
+        image: ghcr.io/sj-tech-sweden/netbox-twenty-middleware:latest
+        command: ["python", "-m", "app.core.worker"]
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "2"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+        envFrom:
+        - secretRef:
+            name: netbox-twenty-middleware-secret
