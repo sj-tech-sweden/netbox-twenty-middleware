@@ -111,7 +111,7 @@ services:
       - test-network
 
   redis-twenty:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: ["--maxmemory-policy", "noeviction"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
