@@ -39,21 +39,38 @@ class TwentyClient:
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         resp = await self._client.get(path, params=params)
-        resp.raise_for_status()
+        await self._check_status(resp)
         return resp.json()
 
     async def _post(self, path: str, json: dict[str, Any]) -> Any:
         resp = await self._client.post(path, json=json)
-        resp.raise_for_status()
+        await self._check_status(resp)
         return resp.json()
 
     async def _patch(self, path: str, json: dict[str, Any]) -> Any:
         resp = await self._client.patch(path, json=json)
-        resp.raise_for_status()
+        await self._check_status(resp)
         return resp.json()
 
     async def _delete(self, path: str) -> None:
         resp = await self._client.delete(path)
+        await self._check_status(resp)
+
+    @staticmethod
+    async def _check_status(resp) -> None:
+        if resp.is_success:
+            return
+        body = resp.text
+        request = getattr(resp, "request", None)
+        method = request.method if request else "?"
+        url = request.url if request else "?"
+        logger.error(
+            "Twenty API %s %s failed (%s): %s",
+            method,
+            url,
+            resp.status_code,
+            body[:2000],
+        )
         resp.raise_for_status()
 
     async def _graphql(self, query: str, variables: dict[str, Any] | None = None) -> Any:

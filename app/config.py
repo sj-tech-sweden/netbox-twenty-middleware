@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     sync_source_header: str = "X-Sync-Source"
     sync_source_value: str = "NetboxTwentyMiddleware"
 
+    # Default country code (without '+') used to normalize local phone numbers
+    # into E.164 before sending them to Twenty CRM, which rejects anything else.
+    phone_country_code: str = "46"
+
     # Periodic full reconciliation (initial sync + catch-up for missed webhooks).
     # Set to 0 to disable the periodic scheduler.
     sync_interval_seconds: int = 300
