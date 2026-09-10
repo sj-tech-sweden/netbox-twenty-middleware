@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: netbox-twenty-middleware
-        image: ghcr.io/sj-tech-sweden/netbox-twenty-middleware:sha-a0852b9
+        image: ghcr.io/sj-tech-sweden/netbox-twenty-middleware:sha-d275e70
         ports:
         - containerPort: 8000
         resources:
