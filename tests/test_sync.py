@@ -56,6 +56,7 @@ def engine(settings):
         twenty.get_company = AsyncMock(return_value=None)
         twenty.get_companies = AsyncMock(return_value=[])
         twenty.get_people = AsyncMock(return_value=[])
+        twenty.get_people_by_netbox_contact_id = AsyncMock(return_value={})
         twenty.create_company = AsyncMock(return_value={"id": "new"})
         twenty.update_company = AsyncMock()
         twenty.get_company_custom_fields = AsyncMock(return_value=[])

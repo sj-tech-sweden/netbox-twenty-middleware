@@ -346,6 +346,7 @@ class SyncEngine:
         action: str,
         contact: dict[str, Any],
         people: list[dict[str, Any]] | None = None,
+        people_by_netbox: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         contact_id = contact.get("id")
         if contact_id is None:
@@ -355,6 +356,9 @@ class SyncEngine:
 
         if action == "deleted":
             target_id = nb_person_id
+            if not target_id and people_by_netbox is not None:
+                existing = people_by_netbox.get(str(contact_id))
+                target_id = existing.get("id") if existing else None
             if not target_id and people is not None:
                 existing = self._find_person_by_contact_id(people, str(contact_id))
                 target_id = existing.get("id") if existing else None
@@ -374,14 +378,18 @@ class SyncEngine:
         # Find existing person. Prefer the stored Twenty id, but fall back to
         # matching by netboxContactId: the stored id can be stale (404) while the
         # person still exists, and blindly re-creating would violate the unique
-        # netboxContactId constraint.
+        # netboxContactId constraint. The netboxContactId index is built from a
+        # GraphQL scan (custom fields are omitted by the REST list), so it is the
+        # authoritative match.
         existing = None
         if nb_person_id:
             existing = await self._twenty.get_person(nb_person_id)
+        if existing is None and people_by_netbox is not None:
+            existing = people_by_netbox.get(str(contact_id))
         if existing is None and people is not None:
             existing = self._find_person_by_contact_id(people, str(contact_id))
         if existing is None:
-            # Webhook path (no pre-fetched people list): still avoid recreating a
+            # Webhook path (no pre-fetched index): still avoid recreating a
             # person we already synced by looking it up via netboxContactId.
             existing = await self._twenty.get_person_by_contact_id(str(contact_id))
 
@@ -780,6 +788,9 @@ class SyncEngine:
     async def reconcile_people(self) -> None:
         contacts = await self._netbox.get_contacts()
         people = await self._twenty.get_people()
+        # Authoritative netboxContactId -> person map (GraphQL scan returns the
+        # custom field that the REST list omits).
+        people_by_netbox = await self._twenty.get_people_by_netbox_contact_id()
 
         people_by_id = {p["id"]: p for p in people}
         people_by_email: dict[str, dict[str, Any]] = {}
@@ -810,7 +821,9 @@ class SyncEngine:
                 name = (contact.get("name") or "").lower()
                 person = people_by_name.get(name) if name else None
             try:
-                await self._sync_contact_to_person("object_updated", contact, people)
+                await self._sync_contact_to_person(
+                    "object_updated", contact, people, people_by_netbox
+                )
             except Exception:
                 logger.exception("Reconcile failed for contact %s", cid)
             if person:
