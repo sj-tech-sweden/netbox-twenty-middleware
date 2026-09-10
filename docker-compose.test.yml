@@ -3,7 +3,7 @@ services:
   # NetBox Stack
   # ═══════════════════════════════════════════════════════════════
   postgres-netbox:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: netbox
       POSTGRES_USER: netbox
@@ -95,7 +95,7 @@ services:
   # Twenty CRM Stack
   # ═══════════════════════════════════════════════════════════════
   postgres-twenty:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: twenty
       POSTGRES_USER: postgres
