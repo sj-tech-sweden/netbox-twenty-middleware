@@ -233,7 +233,7 @@ class TestTwentyClient:
         inner.request.return_value = make_resp(200, {"data": {"companies": [{"id": "c1"}]}})
         result = await client.get_companies()
         assert result == [{"id": "c1"}]
-        inner.request.assert_called_with("GET", "/rest/companies", params={}, json=None)
+        inner.request.assert_called_with("GET", "/rest/companies", params={"limit": 200}, json=None)
 
         inner.request.return_value = make_resp(200, {"data": {"createCompany": {"id": "c1"}}})
         result = await client.create_company({"name": "X"})
@@ -252,12 +252,36 @@ class TestTwentyClient:
         inner.request.return_value = make_resp(200, {"data": {"people": [{"id": "p1"}]}})
         result = await client.get_people()
         assert result == [{"id": "p1"}]
-        inner.request.assert_called_with("GET", "/rest/people", params={}, json=None)
+        inner.request.assert_called_with("GET", "/rest/people", params={"limit": 200}, json=None)
 
         inner.request.return_value = make_resp(200, {"data": {"createPerson": {"id": "p1"}}})
         result = await client.create_person({"name": {}})
         assert result == {"id": "p1"}
         inner.request.assert_called_with("POST", "/rest/people", json={"name": {}}, params=None)
+
+    @pytest.mark.anyio
+    async def test_person_by_contact_id_graphql(self, tw_client):
+        client, inner, _, _ = tw_client
+        inner.request.return_value = make_resp(
+            200,
+            {"data": {"people": {"edges": [{"node": {"id": "p1", "netboxContactId": "15"}}]}}},
+        )
+        result = await client.get_person_by_contact_id("15")
+        assert result == {"id": "p1", "netboxContactId": "15"}
+        assert inner.request.call_args.args[1] == "/graphql"
+
+    @pytest.mark.anyio
+    async def test_get_people_paginates(self, tw_client):
+        client, inner, _, _ = tw_client
+        page1 = {
+            "data": {"people": [{"id": "a"}, {"id": "b"}]},
+            "pageInfo": {"hasNextPage": True, "endCursor": "b"},
+        }
+        page2 = {"data": {"people": [{"id": "c"}]}, "pageInfo": {"hasNextPage": False}}
+        inner.request.side_effect = [make_resp(200, page1), make_resp(200, page2)]
+        result = await client.get_people()
+        assert result == [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+        assert inner.request.call_count == 2
 
     @pytest.mark.anyio
     async def test_metadata_graphql_selection(self, tw_client):
@@ -288,7 +312,9 @@ class TestTwentyClient:
         inner.request.return_value = make_resp(200, {"data": {"netboxresources": [{"id": "r1"}]}})
         result = await client.get_netbox_resources()
         assert result == [{"id": "r1"}]
-        inner.request.assert_called_with("GET", "/rest/netboxresources", params={}, json=None)
+        inner.request.assert_called_with(
+            "GET", "/rest/netboxresources", params={"limit": 200}, json=None
+        )
 
         inner.request.return_value = make_resp(
             200, {"data": {"createNetboxresource": {"id": "r1"}}}
