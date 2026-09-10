@@ -392,7 +392,7 @@ class TestInfraSync:
         twenty.create_netbox_resource.assert_called_once()
         call_args = twenty.create_netbox_resource.call_args[0][0]
         assert call_args["name"] == "10.0.0.0/8"
-        assert call_args["resourcetype"] == "Prefix"
+        assert call_args["resourcetype"] == "PREFIX"
         assert call_args["prefixcidr"] == "10.0.0.0/8"
         assert call_args["netboxurl"] == {"primaryLinkUrl": "http://netbox:8000/ipam/prefixes/20/"}
 
@@ -400,7 +400,14 @@ class TestInfraSync:
     async def test_vrf_update_patches_existing_resource(self, engine):
         eng, nb, twenty = engine
         vrf = {"id": 5, "name": "Updated VRF", "tenant": {"id": 10}}
-        existing = [{"id": "res-1", "name": "Old VRF", "type": "VRF"}]
+        existing = [
+            {
+                "id": "res-1",
+                "name": "Old VRF",
+                "resourcetype": "VRF",
+                "netboxid": "5",
+            }
+        ]
         twenty.get_netbox_resources.return_value = existing
 
         await eng._sync_infra_to_netbox_resource("vrf", "updated", vrf)
@@ -439,11 +446,36 @@ class TestInfraSync:
     @pytest.mark.anyio
     async def test_vrf_delete_removes_resource(self, engine):
         eng, nb, twenty = engine
-        twenty.get_netbox_resources.return_value = [{"id": "res-1"}]
+        twenty.get_netbox_resources.return_value = [
+            {"id": "res-1", "resourcetype": "VRF", "netboxid": "5"}
+        ]
 
         await eng._sync_infra_to_netbox_resource("vrf", "deleted", {"id": 5})
 
         twenty._delete.assert_called_once_with("/rest/netboxresources/res-1")
+
+    @pytest.mark.anyio
+    async def test_prefix_and_vrf_same_netboxid_do_not_collide(self, engine):
+        eng, nb, twenty = engine
+        # A VRF with netboxid "2" already exists; a Prefix with the same netboxid
+        # must NOT be matched to it (different resourcetype).
+        twenty.get_netbox_resources.return_value = [
+            {
+                "id": "res-vrf",
+                "name": "VRF 2",
+                "resourcetype": "VRF",
+                "netboxid": "2",
+            }
+        ]
+        prefix = {"id": 2, "prefix": "10.0.0.0/8", "tenant": {"id": 10}}
+
+        await eng._sync_infra_to_netbox_resource("prefix", "created", prefix)
+
+        twenty.create_netbox_resource.assert_called_once()
+        call_args = twenty.create_netbox_resource.call_args[0][0]
+        assert call_args["resourcetype"] == "PREFIX"
+        assert call_args["netboxid"] == "2"
+        twenty.update_netbox_resource.assert_not_called()
 
     @pytest.mark.anyio
     async def test_vrf_delete_noop_when_no_record(self, engine):
@@ -654,3 +686,22 @@ class TestReconcile:
         twenty.get_netbox_resources.return_value = []
         await eng.reconcile_resources()
         twenty.create_netbox_resource.assert_awaited()
+
+
+class TestPhoneNormalization:
+    @pytest.mark.anyio
+    async def test_normalize_phone_strips_formatting_and_adds_cc(self, engine):
+        eng, nb, twenty = engine
+        assert eng._normalize_phone("0704-677005") == "+46704677005"
+        assert eng._normalize_phone("767692700") == "+46767692700"
+
+    @pytest.mark.anyio
+    async def test_normalize_phone_keeps_existing_e164(self, engine):
+        eng, nb, twenty = engine
+        assert eng._normalize_phone("+46767692700") == "+46767692700"
+
+    @pytest.mark.anyio
+    async def test_normalize_phone_returns_none_for_empty(self, engine):
+        eng, nb, twenty = engine
+        assert eng._normalize_phone("") is None
+        assert eng._normalize_phone(None) is None
