@@ -290,6 +290,30 @@ class TestTwentyClient:
         assert inner.request.call_count == 2
 
     @pytest.mark.anyio
+    async def test_people_scan_query_uses_first_after_not_paging(self, tw_client):
+        """Regression: the people GraphQL query must use `first`/`after`, not
+        `paging` (which this Twenty version rejects, silently emptying the
+        index and causing duplicate-person 400s)."""
+        client, inner, _, _ = tw_client
+        inner.request.return_value = make_resp(
+            200,
+            {
+                "data": {
+                    "people": {
+                        "edges": [],
+                        "pageInfo": {"hasNextPage": False},
+                    }
+                }
+            },
+        )
+        await client.get_people_by_netbox_contact_id()
+        call = inner.request.call_args
+        payload = call.kwargs.get("json") if call.kwargs else call.args[-1]
+        query = payload["query"]
+        assert "people(first:" in query or "people(first :" in query
+        assert "paging" not in query
+
+    @pytest.mark.anyio
     async def test_person_by_contact_id_graphql(self, tw_client):
         client, inner, _, _ = tw_client
         inner.request.return_value = make_resp(
