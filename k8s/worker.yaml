@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: netbox-twenty-middleware-worker
-        image: ghcr.io/sj-tech-sweden/netbox-twenty-middleware:sha-230b12e
+        image: ghcr.io/sj-tech-sweden/netbox-twenty-middleware:main
         command: [ "python", "-m", "app.core.worker" ]
         resources:
           limits:
