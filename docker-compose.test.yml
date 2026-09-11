@@ -8,6 +8,9 @@ services:
       POSTGRES_DB: netbox
       POSTGRES_USER: netbox
       POSTGRES_PASSWORD: netbox_test_pass
+      # postgres:18-alpine changed its default PGDATA off the mounted volume; pin
+      # it back so initdb persists data on the declared volume.
+      PGDATA: /var/lib/postgresql/data
     healthcheck:
       test: pg_isready -U netbox -d netbox
       interval: 5s
@@ -100,6 +103,7 @@ services:
       POSTGRES_DB: twenty
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: twenty_test_pass
+      PGDATA: /var/lib/postgresql/data
     healthcheck:
       test: pg_isready -U postgres -d twenty
       interval: 5s

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from app.config import Settings
@@ -37,6 +38,7 @@ def engine(settings):
         nb.get_tenants = AsyncMock(return_value=[])
         nb.get_contacts = AsyncMock(return_value=[])
         nb.get_contact_by_person_id = AsyncMock(return_value=None)
+        nb.get_contact_assignments = AsyncMock(return_value=[])
         nb.create_contact = AsyncMock(return_value={"id": 1})
         nb.update_contact = AsyncMock()
         nb.get_vrfs = AsyncMock(return_value=[])
@@ -600,6 +602,43 @@ class TestEventRouting:
         )
         twenty.create_netbox_resource.assert_called_once()
 
+    @pytest.mark.anyio
+    async def test_person_deleted_deletes_netbox_contact_and_creates_nothing(self, engine):
+        """A deleted Twenty person must delete (never re-create) its NetBox contact."""
+        eng, nb, twenty = engine
+        nb.delete_contact = AsyncMock()
+        twenty.delete_person = AsyncMock()
+        twenty.create_contact = AsyncMock()
+        event = {
+            "event": "person.deleted",
+            "data": {"id": "p1", "netboxContactId": "15"},
+        }
+        await eng.handle_twenty_event(event)
+        nb.delete_contact.assert_awaited_once_with(15)
+        twenty.create_contact.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_person_deleted_without_netboxid_is_noop(self, engine):
+        """If the deleted person carried no NetBox contact id, do nothing (no crash)."""
+        eng, nb, twenty = engine
+        nb.delete_contact = AsyncMock()
+        event = {"event": "person.deleted", "data": {"id": "p1"}}
+        await eng.handle_twenty_event(event)
+        nb.delete_contact.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_contact_deleted_deletes_twenty_person(self, engine):
+        """A deleted NetBox contact must delete its linked Twenty person."""
+        eng, nb, twenty = engine
+        twenty.delete_person = AsyncMock()
+        event = {
+            "model": "contact",
+            "action": "deleted",
+            "data": {"id": 15, "custom_fields": {"twenty_person_id": "p1"}},
+        }
+        await eng.handle_netbox_event(event)
+        twenty.delete_person.assert_awaited_once_with("p1")
+
 
 class TestReconcile:
     @pytest.mark.anyio
@@ -687,6 +726,150 @@ class TestReconcile:
         twenty.get_netbox_resources.return_value = []
         await eng.reconcile_resources()
         twenty.create_netbox_resource.assert_awaited()
+
+
+class TestPeopleDuplicateRepro:
+    """Reproduce the prod 400 duplicate-person constraint failures.
+
+    Prod symptom: a NetBox contact carries a stale ``twenty_person_id`` that now
+    404s, while the person still exists in Twenty with the same
+    ``netboxContactId``. The Twenty REST ``/rest/people`` list omits the
+    ``netboxContactId`` custom field, so a match must come from the GraphQL scan.
+    Without that match the engine re-created the person and hit the unique
+    ``person.IDX_UNIQUE_...`` (netboxContactId) constraint -> HTTP 400.
+    """
+
+    @staticmethod
+    def _http_400_duplicate() -> httpx.HTTPStatusError:
+        req = httpx.Request("POST", "http://twenty:3000/rest/people")
+        resp = httpx.Response(
+            400,
+            request=req,
+            text="duplicate entry was detected: unique constraint "
+            "person.IDX_UNIQUE_87914cd3ce963115f8cb943e2ac was violated",
+        )
+        return httpx.HTTPStatusError("400", request=req, response=resp)
+
+    @pytest.mark.anyio
+    async def test_reconcile_reuses_existing_person_via_netbox_index(self, engine):
+        """Stored id is stale/404, REST omits netboxContactId, GraphQL finds it."""
+        eng, nb, twenty = engine
+        twenty.get_person = AsyncMock(return_value=None)
+        twenty.get_person_by_contact_id = AsyncMock(return_value=None)
+        twenty.create_person = AsyncMock(return_value={"id": "new"})
+        twenty.update_person = AsyncMock()
+
+        contact = {
+            "id": 15,
+            "name": "Foo Bar",
+            "email": "foo@sj-tech.se",
+            "phone": "0704-677005",
+            "custom_fields": {"twenty_person_id": "0947af77-stale-404-uuid"},
+        }
+        # REST list omits the netboxContactId custom field.
+        twenty.get_people.return_value = [
+            {
+                "id": "real-id",
+                "name": {"firstName": "Foo", "lastName": "Bar"},
+                "emails": {"primaryEmail": "foo@sj-tech.se"},
+                "phones": {"primaryPhoneNumber": ""},
+            }
+        ]
+        # GraphQL scan is the authoritative netboxContactId -> person map.
+        twenty.get_people_by_netbox_contact_id.return_value = {
+            "15": {
+                "id": "real-id",
+                "netboxContactId": "15",
+                "name": {"firstName": "Foo", "lastName": "Bar"},
+                "emails": {"primaryEmail": "foo@sj-tech.se"},
+            }
+        }
+        twenty.get_person.return_value = None  # stale stored id 404s
+        nb.get_contacts.return_value = [contact]
+
+        await eng.reconcile_people()
+
+        twenty.create_person.assert_not_awaited()
+        twenty.update_person.assert_awaited_once()
+        assert twenty.update_person.await_args.args[0] == "real-id"
+        # Linkage is repaired from the stale id to the real person id.
+        nb.update_contact.assert_awaited()
+        cf = nb.update_contact.await_args.args[1]["custom_fields"]
+        assert cf["twenty_person_id"] == "real-id"
+
+    @pytest.mark.anyio
+    async def test_webhook_path_reuses_existing_person_via_graphql(self, engine):
+        """Webhook (no pre-fetched index): GraphQL lookup must prevent recreate."""
+        eng, nb, twenty = engine
+        twenty.get_person = AsyncMock(return_value=None)
+        twenty.get_person_by_contact_id = AsyncMock(return_value=None)
+        twenty.create_person = AsyncMock(return_value={"id": "new"})
+        twenty.update_person = AsyncMock()
+
+        contact = {
+            "id": 15,
+            "name": "Foo Bar",
+            "email": "foo@sj-tech.se",
+            "phone": "",
+            "custom_fields": {"twenty_person_id": "0947af77-stale-404-uuid"},
+        }
+        twenty.get_person.return_value = None  # stale stored id 404s
+        twenty.get_person_by_contact_id.return_value = {
+            "id": "real-id",
+            "netboxContactId": "15",
+            "name": {"firstName": "Foo", "lastName": "Bar"},
+            "emails": {"primaryEmail": "foo@sj-tech.se"},
+        }
+
+        await eng._sync_contact_to_person("object_updated", contact)
+
+        twenty.create_person.assert_not_awaited()
+        twenty.update_person.assert_awaited_once()
+        assert twenty.update_person.await_args.args[0] == "real-id"
+        nb.update_contact.assert_awaited()
+        cf = nb.update_contact.await_args.args[1]["custom_fields"]
+        assert cf["twenty_person_id"] == "real-id"
+
+    @pytest.mark.anyio
+    async def test_create_duplicate_400_self_heals_to_existing_person(self, engine):
+        """If create still 400s as duplicate, reuse the existing person."""
+        eng, nb, twenty = engine
+        twenty.get_person = AsyncMock(return_value=None)
+        twenty.get_person_by_contact_id = AsyncMock(return_value=None)
+        twenty.create_person = AsyncMock(return_value={"id": "new"})
+        twenty.update_person = AsyncMock()
+
+        contact = {
+            "id": 15,
+            "name": "Foo Bar",
+            "email": "foo@sj-tech.se",
+            "phone": "",
+            "custom_fields": {"twenty_person_id": ""},
+        }
+        twenty.get_person.return_value = None
+        twenty.create_person = AsyncMock(side_effect=self._http_400_duplicate())
+        # GraphQL scan misses on the initial match attempt, but the self-heal
+        # lookup (triggered by the duplicate 400) finds the existing person.
+        twenty.get_person_by_contact_id = AsyncMock(
+            side_effect=[
+                None,
+                {
+                    "id": "real-id",
+                    "netboxContactId": "15",
+                    "name": {"firstName": "Foo", "lastName": "Bar"},
+                    "emails": {"primaryEmail": "foo@sj-tech.se"},
+                },
+            ]
+        )
+
+        await eng._sync_contact_to_person("object_updated", contact, people=[], people_by_netbox={})
+
+        twenty.create_person.assert_awaited()
+        twenty.update_person.assert_awaited_once()
+        assert twenty.update_person.await_args.args[0] == "real-id"
+        nb.update_contact.assert_awaited()
+        cf = nb.update_contact.await_args.args[1]["custom_fields"]
+        assert cf["twenty_person_id"] == "real-id"
 
 
 class TestPhoneNormalization:

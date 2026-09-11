@@ -233,8 +233,8 @@ class TwentyClient:
         after: str | None = None
         while True:
             query = """
-            query PeopleByNetbox($after: ConnectionCursor) {
-              people(paging: {first: 100, after: $after}) {
+            query PeopleByNetbox($after: String) {
+              people(first: 100, after: $after) {
                 edges {
                   node {
                     id
