@@ -602,6 +602,43 @@ class TestEventRouting:
         )
         twenty.create_netbox_resource.assert_called_once()
 
+    @pytest.mark.anyio
+    async def test_person_deleted_deletes_netbox_contact_and_creates_nothing(self, engine):
+        """A deleted Twenty person must delete (never re-create) its NetBox contact."""
+        eng, nb, twenty = engine
+        nb.delete_contact = AsyncMock()
+        twenty.delete_person = AsyncMock()
+        twenty.create_contact = AsyncMock()
+        event = {
+            "event": "person.deleted",
+            "data": {"id": "p1", "netboxContactId": "15"},
+        }
+        await eng.handle_twenty_event(event)
+        nb.delete_contact.assert_awaited_once_with(15)
+        twenty.create_contact.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_person_deleted_without_netboxid_is_noop(self, engine):
+        """If the deleted person carried no NetBox contact id, do nothing (no crash)."""
+        eng, nb, twenty = engine
+        nb.delete_contact = AsyncMock()
+        event = {"event": "person.deleted", "data": {"id": "p1"}}
+        await eng.handle_twenty_event(event)
+        nb.delete_contact.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_contact_deleted_deletes_twenty_person(self, engine):
+        """A deleted NetBox contact must delete its linked Twenty person."""
+        eng, nb, twenty = engine
+        twenty.delete_person = AsyncMock()
+        event = {
+            "model": "contact",
+            "action": "deleted",
+            "data": {"id": 15, "custom_fields": {"twenty_person_id": "p1"}},
+        }
+        await eng.handle_netbox_event(event)
+        twenty.delete_person.assert_awaited_once_with("p1")
+
 
 class TestReconcile:
     @pytest.mark.anyio
