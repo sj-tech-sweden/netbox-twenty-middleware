@@ -1,5 +1,5 @@
 # ---- Stage 1: Builder ----
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /build
 
@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY app/ app/
 
 # ---- Stage 2: Production ----
-FROM python:3.14-slim AS runner
+FROM python:3.15-slim AS runner
 
 RUN groupadd -r appuser --gid 10001 \
     && useradd -r -g appuser --uid 10001 --create-home appuser
